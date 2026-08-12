@@ -1,0 +1,504 @@
+public abstract interface class com/eventslooped/klokka/JobContext {
+	public abstract fun extendLease-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getAttempt ()I
+	public abstract fun getEnqueuedAt ()Lkotlin/time/Instant;
+	public abstract fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public abstract fun getKind ()Ljava/lang/String;
+	public abstract fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public abstract fun getScheduledFor ()Lkotlin/time/Instant;
+	public abstract fun progress (DLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/eventslooped/klokka/JobEvent {
+	public abstract fun getAt ()Lkotlin/time/Instant;
+	public abstract fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public abstract fun getKind ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$Cancelled : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun copy-VSiZriA (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;)Lcom/eventslooped/klokka/JobEvent$Cancelled;
+	public static synthetic fun copy-VSiZriA$default (Lcom/eventslooped/klokka/JobEvent$Cancelled;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$Cancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$DeadLettered : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/Throwable;
+	public final fun copy-F7Mbr6Q (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;)Lcom/eventslooped/klokka/JobEvent$DeadLettered;
+	public static synthetic fun copy-F7Mbr6Q$default (Lcom/eventslooped/klokka/JobEvent$DeadLettered;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$DeadLettered;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public final fun getAttempts ()I
+	public final fun getError ()Ljava/lang/Throwable;
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$Enqueued : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;Lkotlin/time/Instant;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4-xTxTNyk ()Ljava/lang/String;
+	public final fun component5 ()Lkotlin/time/Instant;
+	public final fun copy-Ap83D_M (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;Lkotlin/time/Instant;)Lcom/eventslooped/klokka/JobEvent$Enqueued;
+	public static synthetic fun copy-Ap83D_M$default (Lcom/eventslooped/klokka/JobEvent$Enqueued;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$Enqueued;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getScheduledFor ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$FailedAttempt : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;Lkotlin/time/Instant;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/Throwable;
+	public final fun component6 ()Lkotlin/time/Instant;
+	public final fun copy-tdPF9Ks (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;Lkotlin/time/Instant;)Lcom/eventslooped/klokka/JobEvent$FailedAttempt;
+	public static synthetic fun copy-tdPF9Ks$default (Lcom/eventslooped/klokka/JobEvent$FailedAttempt;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;ILjava/lang/Throwable;Lkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$FailedAttempt;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public final fun getAttempt ()I
+	public final fun getError ()Ljava/lang/Throwable;
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public final fun getRetryAt ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$ScheduleMisfired : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;ILcom/eventslooped/klokka/MisfirePolicy;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()I
+	public final fun component6 ()Lcom/eventslooped/klokka/MisfirePolicy;
+	public final fun copy-tdPF9Ks (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;ILcom/eventslooped/klokka/MisfirePolicy;)Lcom/eventslooped/klokka/JobEvent$ScheduleMisfired;
+	public static synthetic fun copy-tdPF9Ks$default (Lcom/eventslooped/klokka/JobEvent$ScheduleMisfired;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;ILcom/eventslooped/klokka/MisfirePolicy;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$ScheduleMisfired;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public final fun getMissedFires ()I
+	public final fun getPolicy ()Lcom/eventslooped/klokka/MisfirePolicy;
+	public final fun getScheduleId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$Started : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4 ()I
+	public final fun component5-UwyO8pc ()J
+	public final fun copy-Z_MkxF4 (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJ)Lcom/eventslooped/klokka/JobEvent$Started;
+	public static synthetic fun copy-Z_MkxF4$default (Lcom/eventslooped/klokka/JobEvent$Started;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$Started;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public final fun getAttempt ()I
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public final fun getQueueWait-UwyO8pc ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobEvent$Succeeded : com/eventslooped/klokka/JobEvent {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun component4 ()I
+	public final fun component5-UwyO8pc ()J
+	public final fun component6 ()Z
+	public final fun copy-PjDXUFs (Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJZ)Lcom/eventslooped/klokka/JobEvent$Succeeded;
+	public static synthetic fun copy-PjDXUFs$default (Lcom/eventslooped/klokka/JobEvent$Succeeded;Ljava/lang/String;Ljava/lang/String;Lkotlin/time/Instant;IJZILjava/lang/Object;)Lcom/eventslooped/klokka/JobEvent$Succeeded;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getAt ()Lkotlin/time/Instant;
+	public final fun getAttempt ()I
+	public fun getJobId-HPaSSh4 ()Ljava/lang/String;
+	public fun getKind ()Ljava/lang/String;
+	public final fun getLate ()Z
+	public final fun getRunDuration-UwyO8pc ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/JobHandler {
+	public abstract fun execute (Lcom/eventslooped/klokka/JobContext;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/eventslooped/klokka/JobId {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/eventslooped/klokka/JobId;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobOptions {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/eventslooped/klokka/RetryPolicy;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-xTxTNyk ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun copy-X7_D_ro (Ljava/lang/String;Ljava/lang/String;Lcom/eventslooped/klokka/RetryPolicy;)Lcom/eventslooped/klokka/JobOptions;
+	public static synthetic fun copy-X7_D_ro$default (Lcom/eventslooped/klokka/JobOptions;Ljava/lang/String;Ljava/lang/String;Lcom/eventslooped/klokka/RetryPolicy;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getRetry ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getUniqueKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobOptionsBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/eventslooped/klokka/JobOptions;
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getRetry ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getUniqueKey ()Ljava/lang/String;
+	public final fun setQueue-pPeuK7k (Ljava/lang/String;)V
+	public final fun setRetry (Lcom/eventslooped/klokka/RetryPolicy;)V
+	public final fun setUniqueKey (Ljava/lang/String;)V
+}
+
+public abstract interface class com/eventslooped/klokka/JobState {
+	public fun getTerminal ()Z
+}
+
+public final class com/eventslooped/klokka/JobState$Cancelled : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$Cancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$DeadLettered : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$DeadLettered;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$DefaultImpls {
+	public static fun getTerminal (Lcom/eventslooped/klokka/JobState;)Z
+}
+
+public final class com/eventslooped/klokka/JobState$Enqueued : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$Enqueued;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$Failed : com/eventslooped/klokka/JobState {
+	public fun <init> (Lkotlin/time/Instant;)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun copy (Lkotlin/time/Instant;)Lcom/eventslooped/klokka/JobState$Failed;
+	public static synthetic fun copy$default (Lcom/eventslooped/klokka/JobState$Failed;Lkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobState$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRetryAt ()Lkotlin/time/Instant;
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$Running : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$Running;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$Scheduled : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$Scheduled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobState$Succeeded : com/eventslooped/klokka/JobState {
+	public static final field INSTANCE Lcom/eventslooped/klokka/JobState$Succeeded;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getTerminal ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobType {
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/KSerializer;)V
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getSerializer ()Lkotlinx/serialization/KSerializer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/MisfirePolicy {
+}
+
+public final class com/eventslooped/klokka/MisfirePolicy$CatchUp : com/eventslooped/klokka/MisfirePolicy {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/eventslooped/klokka/MisfirePolicy$CatchUp;
+	public static synthetic fun copy$default (Lcom/eventslooped/klokka/MisfirePolicy$CatchUp;IILjava/lang/Object;)Lcom/eventslooped/klokka/MisfirePolicy$CatchUp;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAtMost ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/MisfirePolicy$FireOnce : com/eventslooped/klokka/MisfirePolicy {
+	public static final field INSTANCE Lcom/eventslooped/klokka/MisfirePolicy$FireOnce;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/MisfirePolicy$Skip : com/eventslooped/klokka/MisfirePolicy {
+	public static final field INSTANCE Lcom/eventslooped/klokka/MisfirePolicy$Skip;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/NonRetryable {
+}
+
+public final class com/eventslooped/klokka/Outcome : java/lang/Enum {
+	public static final field AnyTerminal Lcom/eventslooped/klokka/Outcome;
+	public static final field DeadLettered Lcom/eventslooped/klokka/Outcome;
+	public static final field Succeeded Lcom/eventslooped/klokka/Outcome;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/eventslooped/klokka/Outcome;
+	public static fun values ()[Lcom/eventslooped/klokka/Outcome;
+}
+
+public final class com/eventslooped/klokka/QueueName {
+	public static final field Companion Lcom/eventslooped/klokka/QueueName$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/eventslooped/klokka/QueueName;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/QueueName$Companion {
+	public final fun getDEFAULT-xTxTNyk ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/RetentionPolicy {
+	public synthetic fun <init> (JJLkotlin/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/time/Duration;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UwyO8pc ()J
+	public final fun component2-UwyO8pc ()J
+	public final fun component3-FghU774 ()Lkotlin/time/Duration;
+	public final fun copy-Bo06rRw (JJLkotlin/time/Duration;)Lcom/eventslooped/klokka/RetentionPolicy;
+	public static synthetic fun copy-Bo06rRw$default (Lcom/eventslooped/klokka/RetentionPolicy;JJLkotlin/time/Duration;ILjava/lang/Object;)Lcom/eventslooped/klokka/RetentionPolicy;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCancelledFor-UwyO8pc ()J
+	public final fun getDeadLetteredFor-FghU774 ()Lkotlin/time/Duration;
+	public final fun getSucceededFor-UwyO8pc ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/RetryPolicy {
+	public static final field Companion Lcom/eventslooped/klokka/RetryPolicy$Companion;
+	public abstract fun nextDelay-3UGz1UU (ILjava/lang/Throwable;)Lkotlin/time/Duration;
+}
+
+public final class com/eventslooped/klokka/RetryPolicy$Companion {
+	public final fun exponential-AxG444s (JDIDJLkotlin/random/Random;)Lcom/eventslooped/klokka/RetryPolicy;
+	public static synthetic fun exponential-AxG444s$default (Lcom/eventslooped/klokka/RetryPolicy$Companion;JDIDJLkotlin/random/Random;ILjava/lang/Object;)Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getNone ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun intervals (Ljava/util/List;)Lcom/eventslooped/klokka/RetryPolicy;
+}
+
+public final class com/eventslooped/klokka/TypesKt {
+	public static final fun options (Lkotlin/jvm/functions/Function1;)Lcom/eventslooped/klokka/JobOptions;
+}
+
+public final class com/eventslooped/klokka/WorkerId {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/eventslooped/klokka/WorkerId;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/spi/ClaimedJob {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ILkotlin/time/Instant;Lkotlin/time/Instant;Lkotlin/time/Instant;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-HPaSSh4 ()Ljava/lang/String;
+	public final fun component10 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5-xTxTNyk ()Ljava/lang/String;
+	public final fun component6 ()I
+	public final fun component7 ()Lkotlin/time/Instant;
+	public final fun component8 ()Lkotlin/time/Instant;
+	public final fun component9 ()Lkotlin/time/Instant;
+	public final fun copy-0Vso8ug (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ILkotlin/time/Instant;Lkotlin/time/Instant;Lkotlin/time/Instant;J)Lcom/eventslooped/klokka/spi/ClaimedJob;
+	public static synthetic fun copy-0Vso8ug$default (Lcom/eventslooped/klokka/spi/ClaimedJob;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ILkotlin/time/Instant;Lkotlin/time/Instant;Lkotlin/time/Instant;JILjava/lang/Object;)Lcom/eventslooped/klokka/spi/ClaimedJob;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAttempt ()I
+	public final fun getEnqueuedAt ()Lkotlin/time/Instant;
+	public final fun getFence ()J
+	public final fun getId-HPaSSh4 ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getLeaseUntil ()Lkotlin/time/Instant;
+	public final fun getPayload ()Ljava/lang/String;
+	public final fun getPayloadVersion ()I
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getScheduledFor ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/spi/JobStore {
+	public abstract fun claim-F0kyGKk (Ljava/util/List;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun dueSchedules (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun enqueue (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun heartbeat-Yj_zwhA (Ljava/util/List;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun sweep (Lcom/eventslooped/klokka/RetentionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun transition-F7Mbr6Q (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun transition-F7Mbr6Q$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/eventslooped/klokka/spi/JobStore$DefaultImpls {
+	public static synthetic fun transition-F7Mbr6Q$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/eventslooped/klokka/spi/NewJob {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4-xTxTNyk ()Ljava/lang/String;
+	public final fun component5 ()Lkotlin/time/Instant;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy-myB3RTg (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;)Lcom/eventslooped/klokka/spi/NewJob;
+	public static synthetic fun copy-myB3RTg$default (Lcom/eventslooped/klokka/spi/NewJob;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Lkotlin/time/Instant;Ljava/lang/String;ILjava/lang/Object;)Lcom/eventslooped/klokka/spi/NewJob;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getPayload ()Ljava/lang/String;
+	public final fun getPayloadVersion ()I
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getRunAt ()Lkotlin/time/Instant;
+	public final fun getUniqueKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/spi/PushCapableStore : com/eventslooped/klokka/spi/JobStore {
+	public abstract fun wakeups ()Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class com/eventslooped/klokka/spi/ScheduleFire {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;Lcom/eventslooped/klokka/MisfirePolicy;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5 ()Lkotlin/time/Instant;
+	public final fun component6 ()Lcom/eventslooped/klokka/MisfirePolicy;
+	public final fun component7 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;Lcom/eventslooped/klokka/MisfirePolicy;Z)Lcom/eventslooped/klokka/spi/ScheduleFire;
+	public static synthetic fun copy$default (Lcom/eventslooped/klokka/spi/ScheduleFire;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;Lcom/eventslooped/klokka/MisfirePolicy;ZILjava/lang/Object;)Lcom/eventslooped/klokka/spi/ScheduleFire;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getMisfire ()Lcom/eventslooped/klokka/MisfirePolicy;
+	public final fun getMisfired ()Z
+	public final fun getPayload ()Ljava/lang/String;
+	public final fun getPayloadVersion ()I
+	public final fun getScheduleId ()Ljava/lang/String;
+	public final fun getScheduledFor ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/spi/TransactionalStore : com/eventslooped/klokka/spi/JobStore {
+	public abstract fun enqueue (Ljava/lang/Object;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/eventslooped/klokka/store/InMemoryJobSnapshot {
+	public synthetic fun <init> (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/eventslooped/klokka/JobState;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4-xTxTNyk ()Ljava/lang/String;
+	public final fun copy-8mV7fnY (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
+	public static synthetic fun copy-8mV7fnY$default (Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;ILjava/lang/Object;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAttempts ()I
+	public final fun getFence ()J
+	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
+	public final fun getState ()Lcom/eventslooped/klokka/JobState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/store/InMemoryJobStore : com/eventslooped/klokka/spi/JobStore, com/eventslooped/klokka/spi/PushCapableStore {
+	public fun <init> ()V
+	public fun <init> (Lkotlin/time/Clock;)V
+	public synthetic fun <init> (Lkotlin/time/Clock;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun claim-F0kyGKk (Ljava/util/List;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun dueSchedules (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun enqueue (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun heartbeat-Yj_zwhA (Ljava/util/List;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun snapshot-EYbf1d4 (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun sweep (Lcom/eventslooped/klokka/RetentionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun transition-F7Mbr6Q (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun wakeups ()Lkotlinx/coroutines/flow/Flow;
+}
+
