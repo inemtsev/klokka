@@ -72,6 +72,8 @@ public data class ScheduleFire(
  *   never an in-process check.
  * - [claim] scans queues in the given list order: declared order is priority, uniformly
  *   across all stores.
+ * - [claim] returns only rows whose kind is in the caller's `kinds`; rows of any other kind
+ *   are left untouched, so a worker never claims a job it cannot run.
  * - [enqueue] treats a uniqueKey conflict with a non-terminal existing job as idempotent
  *   success and returns the existing job's id.
  * - [transition] is a compare-and-set: it returns false and changes nothing when the
@@ -79,11 +81,33 @@ public data class ScheduleFire(
  * - Expired leases make jobs claimable again (at-least-once semantics).
  */
 public interface JobStore {
+    /**
+     * Persists [jobs] and returns their ids in the same order. A job whose [NewJob.runAt] is
+     * not in the future by the store's clock is stored as [JobState.Enqueued] (due, visible
+     * to workers); a future [NewJob.runAt] is stored as [JobState.Scheduled] (waiting for its
+     * time). Promoting Scheduled to Enqueued when that time arrives is the store's concern;
+     * the runtime never depends on it, because [claim] decides due-ness by time, not state.
+     * A uniqueKey conflict with a non-terminal job returns that job's id (see interface KDoc).
+     */
     public suspend fun enqueue(jobs: List<NewJob>): List<JobId>
 
+    /**
+     * Claims up to [limit] due jobs for [worker] under a lease of [lease], scanning [queues]
+     * in list order (declared order is priority) and returning only jobs whose kind is in
+     * [kinds]. Rows of any other kind are left untouched: not claimed, not transitioned, not
+     * counted against [limit]. An empty [kinds] returns an empty list. The filter is what lets
+     * a worker that does not bind a kind (an older version mid-rollout, a fleet that drains a
+     * shared queue for a subset of kinds) leave that job for a worker that does.
+     *
+     * Atomic across concurrent callers: a row is claimed by exactly one worker per lease
+     * window, in a single statement (SKIP LOCKED or CAS), never an in-process check. Each
+     * claim bumps the row's attempt and fence. Due-ness is decided by the store's clock.
+     */
     public suspend fun claim(
         /** Declared order is priority: earlier queues are drained first. */
         queues: List<QueueName>,
+        /** The kinds this worker can run; only rows with one of these kinds are returned. */
+        kinds: Set<String>,
         limit: Int,
         lease: Duration,
         worker: WorkerId,

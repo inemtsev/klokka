@@ -102,6 +102,9 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                         uniqueKey = job.uniqueKey,
                         enqueuedAt = now,
                     )
+                // Due by the store's clock at insert means Enqueued (visible to workers);
+                // a future runAt means Scheduled (waiting for its time). See JobStore.enqueue.
+                record.state = if (job.runAt <= now) JobState.Enqueued else JobState.Scheduled
                 records[id] = record
                 result.add(id)
                 insertedRunAts.add(job.runAt)
@@ -115,19 +118,21 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
 
     override suspend fun claim(
         queues: List<QueueName>,
+        kinds: Set<String>,
         limit: Int,
         lease: Duration,
         worker: WorkerId,
     ): List<ClaimedJob> {
-        if (limit <= 0) return emptyList()
+        if (limit <= 0 || kinds.isEmpty()) return emptyList()
         val claimed = ArrayList<ClaimedJob>(limit)
         mutex.withLock {
             val now = clock.now()
             for (queue in queues) {
                 if (claimed.size >= limit) break
+                // Kind filter first: rows of other kinds are never touched, per the SPI contract.
                 val eligible =
                     records.values
-                        .filter { it.queue == queue && isClaimable(it, now) }
+                        .filter { it.queue == queue && it.kind in kinds && isClaimable(it, now) }
                         .sortedBy { claimSortKey(it) }
                 for (record in eligible) {
                     if (claimed.size >= limit) break

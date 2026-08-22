@@ -21,6 +21,9 @@ Canonical sources, in order of authority:
   - No SPI method accepts caller-supplied time for comparisons. Due-ness is decided by
     the store's own clock (database time). Node clocks are never trusted.
   - `claim` is one atomic operation (SKIP LOCKED or CAS), never an in-process check.
+  - `claim` takes the set of kinds the worker binds and returns only rows of those kinds;
+    other rows are left untouched. A worker never claims a job it cannot run, so a kind
+    bound nowhere waits in Enqueued instead of being dead-lettered mid-rollout.
   - The `queues` parameter is an ordered `List`: declared order IS priority. There are
     no per-job priority numbers, permanently.
   - A `uniqueKey` conflict with a non-terminal job is idempotent success returning the
@@ -35,8 +38,12 @@ Canonical sources, in order of authority:
   KDoc, docs, or README.
 - `RetentionPolicy` (and any future sweep configuration) stays declarative so stores can
   compile it to bulk SQL. Never accept a lambda for retention decisions.
-- Typed job descriptors only: a stable string kind plus a `@Serializable` payload.
-  Never serialize lambdas or derive job identity from class or function names.
+- Typed job descriptors only: a stable string kind plus a `@Serializable` payload, with an
+  optional default queue on the descriptor (the kind alone is the identity). Never serialize
+  lambdas or derive job identity from class or function names.
+- A job's queue is decided on the producer side: `JobOptions.queue` if set, otherwise
+  `JobType.queue`. Handler registration never names a queue; a worker only declares which
+  queues it drains.
 - Cron is 5-field standard with seconds opt-in. Quartz `L`/`W`/`#` operators are
   permanently out of scope; complex calendars are served by the typed DSL.
 - The Postgres store uses plain JDBC internally. Exposed is recommended in docs and

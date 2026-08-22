@@ -30,6 +30,8 @@ kotlin {
         commonMain.dependencies {
             api(libs.kotlinx.coroutines.core)
             api(libs.kotlinx.serialization.core)
+            // api: JsonPayloadCodec's constructor accepts a caller-configured Json
+            api(libs.kotlinx.serialization.json)
             api(libs.kotlinx.datetime)
         }
 

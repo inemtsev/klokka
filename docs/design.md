@@ -172,6 +172,7 @@ Modeled as a sealed hierarchy. Completion records whether the run was on time or
 ### Claiming and liveness
 
 - Workers claim due rows with `SELECT ... FOR UPDATE SKIP LOCKED` and hold a **lease**, extended by heartbeat while the job runs.
+- Workers claim only kinds they bind. A job whose kind no live worker binds waits in Enqueued; it is never dead-lettered by a worker that cannot run it, which is what keeps a rolling deploy from dead-lettering a kind only the newer version knows.
 - All timestamp comparisons use **database time**. Node clocks are never trusted; both ShedLock and Quartz document clock skew as a production landmine.
 - Every claim carries a monotonically increasing **fencing version**, so a zombie worker resurrected after a pause cannot overwrite newer state.
 - A worker that misses its heartbeat budget has its in-flight jobs revived according to policy.
@@ -217,6 +218,7 @@ A deliberately small core with capability-typed extension seams. The core is com
 interface JobStore {
     suspend fun enqueue(jobs: List<NewJob>): List<JobId>
     suspend fun claim(queues: List<QueueName>,     // declared order = priority
+                      kinds: Set<String>,           // only kinds this worker binds
                       limit: Int, lease: Duration, worker: WorkerId): List<ClaimedJob>
     suspend fun heartbeat(ids: List<JobId>, worker: WorkerId, extend: Duration)
     suspend fun transition(id: JobId, from: JobState, to: JobState): Boolean
@@ -237,7 +239,8 @@ Execution wraps in an interceptor pipeline with stable, documented ordering: met
 
 | Artifact | Contents | Dependencies |
 |---|---|---|
-| `klokka-core` | Runtime, DSL, SPI, in-memory store, retry and misfire policies, events Flow. KMP-friendly common code; JVM the only shipped target initially | kotlinx-coroutines, kotlinx-serialization, kotlinx-datetime (common); slf4j (jvm) |
+| `klokka-core` | Framework-free engine: runtime, SPI, in-memory store, retry and misfire policies, events Flow. KMP-friendly common code; JVM the only shipped target initially. Usable from any JVM main function | kotlinx-coroutines, kotlinx-serialization, kotlinx-datetime (common); slf4j (jvm) |
+| `klokka-ktor` | Ktor glue: `install(Klokka)` config DSL, `Application.klokka` accessor, lifecycle wiring (start on ApplicationStarted, drain on ApplicationStopPreparing), in-memory-store production warning | klokka-core, ktor-server-core |
 | `klokka-postgres` | Postgres store: SKIP LOCKED, LISTEN/NOTIFY, partial indexes, bundled versioned SQL migrations | JDBC only |
 | `klokka-exposed` | `TransactionalStore` bridge for Exposed transactions | Exposed |
 | `klokka-dashboard` | Routes, SSE live updates, per-job logs, read-only mode, page-extension hook | ktor-server-sse |
@@ -316,6 +319,11 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Dashboard auth | `Route`-receiver mounting inheriting `authenticate { }`, fail-closed without auth | 2026-08-12 |
 | Multiplatform | KMP-friendly common core, JVM the only shipped target initially | 2026-08-12 |
 | Priorities | Queue-ordering model (Hangfire style); no per-job integer priorities | 2026-08-12 |
+| Module layering | klokka-core is framework-free; all Ktor glue lives in the separate klokka-ktor artifact | 2026-08-12 |
+| Retry overrides | Per-kind at handler registration, never per enqueue: retry policies are functions and cannot be persisted across nodes | 2026-08-12 |
+| Handler binding | One verb, `handle`, overloaded for a lambda and a `JobHandler` object; no separate `register` | 2026-08-22 |
+| Default queue | Per-kind default on the `JobType` descriptor (`jobType(kind, queue = ...)`), because the producer writes the queue onto the row and the descriptor is what producer and worker code share; `JobOptions.queue` overrides per enqueue; handler registration never names a queue | 2026-08-22 |
+| Claim by bound kinds | `claim` takes the worker's bound kinds and returns only those rows; a kind bound nowhere waits in Enqueued instead of being dead-lettered by a worker that cannot run it (rolling deploys, shared queues across heterogeneous fleets); #33 | 2026-08-22 |
 
 ## 13. Alternatives considered
 

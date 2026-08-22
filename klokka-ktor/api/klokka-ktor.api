@@ -1,0 +1,45 @@
+public final class com/eventslooped/klokka/ktor/KlokkaConfig {
+	public fun <init> ()V
+	public final fun getClaimBatch ()I
+	public final fun getClock ()Lkotlin/time/Clock;
+	public final fun getCodec ()Lcom/eventslooped/klokka/PayloadCodec;
+	public final fun getDefaultRetry ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getDrainTimeout-UwyO8pc ()J
+	public final fun getHeartbeatInterval-UwyO8pc ()J
+	public final fun getLateThreshold-UwyO8pc ()J
+	public final fun getLease-UwyO8pc ()J
+	public final fun getPollInterval-UwyO8pc ()J
+	public final fun getRetention ()Lcom/eventslooped/klokka/RetentionPolicy;
+	public final fun getRole ()Lcom/eventslooped/klokka/runtime/KlokkaRole;
+	public final fun getStore ()Lcom/eventslooped/klokka/spi/JobStore;
+	public final fun getSweepInterval-UwyO8pc ()J
+	public final fun getWorkerId-pcsyqdI ()Ljava/lang/String;
+	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;)V
+	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;)V
+	public static synthetic fun handle$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;ILjava/lang/Object;)V
+	public static synthetic fun handle$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public final fun queue (Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;)V
+	public static synthetic fun queue$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)V
+	public final fun queue-X7_D_ro (Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;)V
+	public static synthetic fun queue-X7_D_ro$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)V
+	public final fun setClaimBatch (I)V
+	public final fun setClock (Lkotlin/time/Clock;)V
+	public final fun setCodec (Lcom/eventslooped/klokka/PayloadCodec;)V
+	public final fun setDefaultRetry (Lcom/eventslooped/klokka/RetryPolicy;)V
+	public final fun setDrainTimeout-LRDsOJo (J)V
+	public final fun setHeartbeatInterval-LRDsOJo (J)V
+	public final fun setLateThreshold-LRDsOJo (J)V
+	public final fun setLease-LRDsOJo (J)V
+	public final fun setPollInterval-LRDsOJo (J)V
+	public final fun setRetention (Lcom/eventslooped/klokka/RetentionPolicy;)V
+	public final fun setRole (Lcom/eventslooped/klokka/runtime/KlokkaRole;)V
+	public final fun setStore (Lcom/eventslooped/klokka/spi/JobStore;)V
+	public final fun setSweepInterval-LRDsOJo (J)V
+	public final fun setWorkerId-A0pf_fQ (Ljava/lang/String;)V
+}
+
+public final class com/eventslooped/klokka/ktor/KlokkaPluginKt {
+	public static final fun getKlokka ()Lio/ktor/server/application/ApplicationPlugin;
+	public static final fun getKlokka (Lio/ktor/server/application/Application;)Lcom/eventslooped/klokka/runtime/KlokkaRuntime;
+}
+
