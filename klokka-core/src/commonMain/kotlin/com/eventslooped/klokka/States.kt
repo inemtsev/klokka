@@ -56,67 +56,82 @@ public sealed interface JobState {
  * and applications may subscribe directly for custom alerting.
  */
 public sealed interface JobEvent {
-    public val jobId: JobId
     public val kind: String
     public val at: Instant
 
+    /** Id of the recurring schedule this event belongs to; null for directly enqueued jobs. */
+    public val scheduleId: String?
+
     public data class Enqueued(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
         val queue: QueueName,
         val scheduledFor: Instant,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
     public data class Started(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
         val attempt: Int,
         /** Time spent between becoming due and starting. Queue wait is an outage signal on its own. */
         val queueWait: Duration,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
     public data class Succeeded(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
         val attempt: Int,
         val runDuration: Duration,
         /** True when the run started later than its misfire threshold allowed. */
         val late: Boolean,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
     public data class FailedAttempt(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
         val attempt: Int,
         val error: Throwable,
         /** Null when this failure dead-letters the job. */
         val retryAt: Instant?,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
     public data class DeadLettered(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
         val attempts: Int,
         val error: Throwable,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
     public data class Cancelled(
-        override val jobId: JobId,
+        val jobId: JobId,
         override val kind: String,
         override val at: Instant,
+        override val scheduleId: String? = null,
     ) : JobEvent
 
+    /**
+     * A recurring schedule came due later than its misfire threshold allowed. There is no
+     * per-run job id here because a misfire is a schedule-level fact: with
+     * [MisfirePolicy.Skip] no run exists at all. [missedFires] counts the fire times
+     * inside the missed window; [emitted] is how many runs the policy actually produced
+     * (0 for Skip, 1 for FireOnce, up to `atMost` for CatchUp).
+     */
     public data class ScheduleMisfired(
-        override val jobId: JobId,
+        override val scheduleId: String,
         override val kind: String,
         override val at: Instant,
-        val scheduleId: String,
         val missedFires: Int,
         val policy: MisfirePolicy,
+        val emitted: Int,
     ) : JobEvent
 }

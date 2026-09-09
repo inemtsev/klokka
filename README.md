@@ -2,7 +2,7 @@
 
 Persistent background jobs for Ktor. A coroutines-native queue and scheduler with typed suspend handlers, retries, transactional enqueue, and a live dashboard, on the database you already run. In Norwegian, something reliable "går som ei klokke": it runs like a clock.
 
-> **Status: pre-release.** The core runtime, the in-memory store, and the Ktor plugin work and are tested; nothing is on Maven Central yet. The Postgres store, recurring jobs, and the dashboard are the current milestone. See [Roadmap](#roadmap) and the [design document](docs/design.md).
+> **Status: pre-release.** The core runtime, recurring jobs, the in-memory store, and the Ktor plugin work and are tested; nothing is on Maven Central yet. The Postgres store and the dashboard are the current milestone. See [Roadmap](#roadmap) and the [design document](docs/design.md).
 
 ## Why
 
@@ -123,6 +123,7 @@ klokka.events
 - **Claims are leases.** Database time decides due-ness, heartbeats extend leases, and every claim carries a fencing token so a zombie worker cannot overwrite newer state.
 - **Retries are per kind, at binding time.** `RetryPolicy.exponential(...)`, `RetryPolicy.intervals(...)`, or `RetryPolicy.None`; a `NonRetryable` exception or an undecodable payload dead-letters immediately.
 - **The producer chooses the queue.** `JobOptions.queue` if set, otherwise `JobType.queue`. Handler binding never names a queue; a worker only declares which queues it drains.
+- **Recurring jobs are code-defined schedules.** `recurring("nightly-rollup", type, payload, schedule = dailyAt(2, 30, zone))`, with `every(...)` and standard 5-field `cron(...)` as the other schedule forms and a zero-payload lambda form for the simplest cases. Missed fires follow an explicit per-schedule `MisfirePolicy` (`FireOnce`, `Skip`, `CatchUp(atMost)`); `OverlapPolicy.SkipIfRunning` keeps a slow run from stacking; `triggerNow(id)` runs a schedule on demand without shifting its cadence. The handler's `scheduledFor` is the intended fire time, so data windows and idempotency keys derive from the schedule, not the wall clock.
 
 ## Modules
 

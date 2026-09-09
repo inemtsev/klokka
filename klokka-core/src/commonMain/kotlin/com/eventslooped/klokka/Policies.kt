@@ -91,6 +91,24 @@ public sealed interface MisfirePolicy {
 }
 
 /**
+ * Whether a recurring schedule may emit a run while a previous run of the same schedule
+ * is still non-terminal.
+ */
+public sealed interface OverlapPolicy {
+    /** Emit on every fire regardless of earlier runs. The default. */
+    public data object Allow : OverlapPolicy
+
+    /**
+     * Skip a fire while a previous run of this schedule is Scheduled, Enqueued, Running or
+     * awaiting a retry. Implemented with the store's uniqueKey rule under the reserved key
+     * `klokka:schedule:<id>`, so no more than one non-terminal run of the schedule exists
+     * at a time. With [MisfirePolicy.CatchUp] this caps the backfill to one outstanding
+     * run: catch-up runs beyond the first collapse into it.
+     */
+    public data object SkipIfRunning : OverlapPolicy
+}
+
+/**
  * Retention for terminal job runs. Cleanup executes as a built-in recurring job on
  * Klokka's own machinery. Dead-lettered runs default to being kept forever (null):
  * they are deleted only when an operator or an explicit policy says so.

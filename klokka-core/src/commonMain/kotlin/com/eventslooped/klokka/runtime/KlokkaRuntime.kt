@@ -8,10 +8,13 @@ import com.eventslooped.klokka.JobOptions
 import com.eventslooped.klokka.JobRegistry
 import com.eventslooped.klokka.JobType
 import com.eventslooped.klokka.JsonPayloadCodec
+import com.eventslooped.klokka.MisfirePolicy
+import com.eventslooped.klokka.OverlapPolicy
 import com.eventslooped.klokka.PayloadCodec
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.RetryPolicy
+import com.eventslooped.klokka.Schedule
 import com.eventslooped.klokka.WorkerId
 import com.eventslooped.klokka.spi.JobStore
 import com.eventslooped.klokka.spi.NewJob
@@ -103,6 +106,7 @@ public class KlokkaRuntime(
 
     private var started = false
     private var engine: WorkerEngine? = null
+    private val recurringRegistry = RecurringRegistry()
 
     /**
      * Persists a job due immediately, on [JobOptions.queue] if set, otherwise on [JobType.queue].
@@ -137,16 +141,90 @@ public class KlokkaRuntime(
     }
 
     /**
+     * Declares a recurring schedule: [payload] is enqueued as a run of [type] every time
+     * [schedule] fires. Must be called before [start], which registers all declared
+     * schedules with the store; only nodes that declare a schedule (and run workers) fire
+     * it, so declare recurring jobs on the worker fleet, not on producer-only nodes.
+     *
+     * [id] is the schedule's durable identity, same character rules as a job kind. The
+     * definition is code: changing any part of it (schedule, payload, policies) takes
+     * effect on the next deploy and resets the schedule's next fire time.
+     *
+     * [misfire] handles fires missed by more than [misfireThreshold] (downtime,
+     * saturation): [MisfirePolicy.FireOnce], the default, runs the most recent missed
+     * fire late; Skip drops missed fires; CatchUp replays a bounded backfill. [overlap]
+     * decides whether a fire may emit a run while a previous run is still non-terminal.
+     * [queue] overrides [JobType.queue] for the emitted runs.
+     */
+    public fun <T> recurring(
+        id: String,
+        type: JobType<T>,
+        payload: T,
+        schedule: Schedule,
+        misfire: MisfirePolicy = MisfirePolicy.FireOnce,
+        misfireThreshold: Duration = 1.minutes,
+        overlap: OverlapPolicy = OverlapPolicy.Allow,
+        queue: QueueName? = null,
+    ) {
+        check(!started) { "recurring() must be called before start(): schedules are registered with the store at startup" }
+        recurringRegistry.register(
+            RecurringDefinition(
+                id = id,
+                kind = type.kind,
+                queue = queue ?: type.queue,
+                payload = settings.codec.encode(type.serializer, payload),
+                payloadVersion = 1,
+                schedule = schedule,
+                misfire = misfire,
+                misfireThreshold = misfireThreshold,
+                overlap = overlap,
+            ),
+        )
+    }
+
+    /**
+     * Enqueues a run of the recurring schedule [id] immediately, without shifting the
+     * schedule's cadence. Respects the schedule's [OverlapPolicy]: with SkipIfRunning and
+     * a non-terminal run outstanding, this is an idempotent no-op returning that run's id.
+     *
+     * @throws IllegalArgumentException when no schedule with [id] is declared on this runtime.
+     */
+    public suspend fun triggerNow(id: String): JobId {
+        val definition =
+            requireNotNull(recurringRegistry.get(id)) {
+                "No recurring schedule with id '$id' is declared on this runtime"
+            }
+        val now = settings.clock.now()
+        val jobId = store.enqueue(listOf(definition.newRun(now))).first()
+        eventsFlow.tryEmit(
+            JobEvent.Enqueued(
+                jobId = jobId,
+                kind = definition.kind,
+                at = now,
+                queue = definition.queue,
+                scheduledFor = now,
+                scheduleId = id,
+            ),
+        )
+        return jobId
+    }
+
+    /** True when at least one recurring schedule is declared. */
+    public fun hasRecurringSchedules(): Boolean = !recurringRegistry.isEmpty()
+
+    /**
      * Launches the worker machinery as supervised children of [scope]: the claim loop,
-     * per-queue executors, the heartbeater, and the retention sweeper. No-op for
-     * [KlokkaRole.Producer]. Idempotent: calling twice is an error.
+     * per-queue executors, the heartbeater, the retention sweeper, and (when schedules
+     * are declared) the scheduler loop that registers and fires them. No-op for
+     * [KlokkaRole.Producer]: a producer-only node neither runs jobs nor fires schedules.
+     * Idempotent: calling twice is an error.
      */
     public fun start(scope: CoroutineScope) {
         check(!started) { "KlokkaRuntime.start() was already called" }
         started = true
         if (settings.role == KlokkaRole.Producer) return
         val internalScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
-        engine = WorkerEngine(store, registry, settings, internalScope, ::emit).also { it.start() }
+        engine = WorkerEngine(store, registry, recurringRegistry, settings, internalScope, ::emit).also { it.start() }
     }
 
     /**

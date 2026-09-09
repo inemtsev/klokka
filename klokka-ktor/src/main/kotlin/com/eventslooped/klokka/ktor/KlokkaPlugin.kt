@@ -57,7 +57,18 @@ public val Klokka: ApplicationPlugin<KlokkaConfig> =
                 workerId = config.workerId,
             )
         val runtime = KlokkaRuntime(config.store, config.registry, settings)
+        config.applyRecurring(runtime)
         application.attributes.put(KlokkaRuntimeKey, runtime)
+
+        // Schedules are registered with the store, and fired, by the scheduler loop that
+        // start() launches; a producer-only node never starts it, so declaring recurring
+        // jobs there is dead configuration.
+        if (config.role == KlokkaRole.Producer && runtime.hasRecurringSchedules()) {
+            application.log.warn(
+                "Klokka: recurring schedules are declared but role = Producer, so this node will " +
+                    "neither register nor fire them. Declare recurring jobs on a Worker or Both node.",
+            )
+        }
 
         // The in-memory store loses all state on restart (issue #29). Warn once outside
         // development mode, where that tradeoff is expected rather than a footgun.

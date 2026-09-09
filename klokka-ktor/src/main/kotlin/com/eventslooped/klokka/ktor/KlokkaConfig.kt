@@ -7,11 +7,15 @@ import com.eventslooped.klokka.JobHandler
 import com.eventslooped.klokka.JobRegistry
 import com.eventslooped.klokka.JobType
 import com.eventslooped.klokka.JsonPayloadCodec
+import com.eventslooped.klokka.MisfirePolicy
+import com.eventslooped.klokka.OverlapPolicy
 import com.eventslooped.klokka.PayloadCodec
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.RetryPolicy
+import com.eventslooped.klokka.Schedule
 import com.eventslooped.klokka.WorkerId
+import com.eventslooped.klokka.jobType
 import com.eventslooped.klokka.runtime.KlokkaRole
 import com.eventslooped.klokka.runtime.KlokkaRuntime
 import com.eventslooped.klokka.runtime.KlokkaSettings
@@ -81,6 +85,7 @@ public class KlokkaConfig {
 
     internal val registry: JobRegistry = JobRegistry()
     private val queueConfigs = mutableListOf<QueueConfig>()
+    private val recurringDeclarations = mutableListOf<KlokkaRuntime.() -> Unit>()
 
     /**
      * Declares a queue this process drains. Declaration order is drain priority: queues
@@ -121,6 +126,51 @@ public class KlokkaConfig {
     /** Binds a suspend lambda to [type]. Same semantics as the object form; [retry] overrides [defaultRetry] for this kind. */
     public fun <T> handle(type: JobType<T>, retry: RetryPolicy? = null, block: suspend JobContext.(T) -> Unit) {
         registry.handle(type, retry, block)
+    }
+
+    /**
+     * Declares a recurring schedule; see [KlokkaRuntime.recurring] for the semantics of
+     * every parameter. Declared here so the schedule exists before the runtime starts,
+     * which is when schedules are registered with the store.
+     */
+    public fun <T> recurring(
+        id: String,
+        type: JobType<T>,
+        payload: T,
+        schedule: Schedule,
+        misfire: MisfirePolicy = MisfirePolicy.FireOnce,
+        misfireThreshold: Duration = 1.minutes,
+        overlap: OverlapPolicy = OverlapPolicy.Allow,
+        queue: QueueName? = null,
+    ) {
+        recurringDeclarations.add {
+            recurring(id, type, payload, schedule, misfire, misfireThreshold, overlap, queue)
+        }
+    }
+
+    /**
+     * The zero-payload convenience form: declares the schedule AND binds [block] as the
+     * handler in one call. The schedule [id] doubles as the job kind, so it shares the
+     * kind namespace and character rules and must not collide with a kind bound via
+     * [handle]. Graduating to the full form (a [JobType], a payload, a standalone
+     * handler) changes the descriptor, not the enqueue model.
+     */
+    public fun recurring(
+        id: String,
+        schedule: Schedule,
+        misfire: MisfirePolicy = MisfirePolicy.FireOnce,
+        misfireThreshold: Duration = 1.minutes,
+        overlap: OverlapPolicy = OverlapPolicy.Allow,
+        queue: QueueName? = null,
+        block: suspend JobContext.() -> Unit,
+    ) {
+        val type = jobType<Unit>(id, queue = queue ?: QueueName.DEFAULT)
+        handle(type) { _ -> block() }
+        recurring(id, type, Unit, schedule, misfire, misfireThreshold, overlap, queue)
+    }
+
+    internal fun applyRecurring(runtime: KlokkaRuntime) {
+        recurringDeclarations.forEach { runtime.it() }
     }
 
     /** The declared queues in declaration order, or a single default queue if none were declared. */

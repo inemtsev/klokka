@@ -4,7 +4,6 @@ package com.eventslooped.klokka.spi
 
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
-import com.eventslooped.klokka.MisfirePolicy
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.WorkerId
@@ -27,6 +26,8 @@ public data class NewJob(
     val runAt: Instant,
     /** See [com.eventslooped.klokka.JobOptions.uniqueKey] for the dedup contract. */
     val uniqueKey: String? = null,
+    /** Id of the recurring schedule that emitted this run; null for directly enqueued jobs. */
+    val scheduleId: String? = null,
 )
 
 /** A job claimed under a lease, with everything a worker needs to execute it. */
@@ -47,18 +48,48 @@ public data class ClaimedJob(
      * resurrected after a pause cannot overwrite newer state.
      */
     val fence: Long,
+    /** Id of the recurring schedule that emitted this run; null for directly enqueued jobs. */
+    val scheduleId: String? = null,
 )
 
-/** A recurring schedule that is due to emit a job run. */
+/**
+ * A recurring schedule's persisted identity and timing state, as the runtime registers it.
+ * The store never sees or evaluates a schedule expression: all schedule math (cron, DSL,
+ * misfire policy, payloads) lives in the runtime, and the store only keeps the fields
+ * below plus per-row lease state. [fingerprint] is an opaque string the runtime derives
+ * from the full definition; stores compare it for equality and never parse it.
+ */
+public data class ScheduleSpec(
+    /** Stable schedule id, chosen by the user. The row's identity. */
+    val id: String,
+    /** The job kind this schedule emits. Display and ops metadata, not used by the store. */
+    val kind: String,
+    /** Opaque definition fingerprint; a change means "the definition changed". */
+    val fingerprint: String,
+    /** Human-readable definition (for tooling and the dashboard), e.g. `cron '0 9 * * 1-5' UTC`. */
+    val description: String,
+    /**
+     * The next fire time to store when this upsert inserts the row or replaces a changed
+     * fingerprint. Null means the schedule currently has no future fire (dormant).
+     */
+    val fireAt: Instant?,
+)
+
+/** A due schedule claimed under a lease, with what the runtime needs to compute the fire. */
 public data class ScheduleFire(
     val scheduleId: String,
-    val kind: String,
-    val payload: String?,
-    val payloadVersion: Int,
+    /** The stored next-fire time that came due. */
     val scheduledFor: Instant,
-    val misfire: MisfirePolicy,
-    /** True when scheduledFor is further in the past than the schedule's misfire threshold. */
-    val misfired: Boolean,
+    /**
+     * The store's clock at claim time. The runtime uses it to judge misfires and to compute
+     * the fire time that follows a missed window, so no node clock enters schedule math.
+     */
+    val now: Instant,
+    /**
+     * Fencing token: increases every time this schedule is claimed by [JobStore.dueSchedules].
+     * [JobStore.completeFire] carrying a stale fence is rejected.
+     */
+    val fence: Long,
 )
 
 /**
@@ -79,6 +110,10 @@ public data class ScheduleFire(
  * - [transition] is a compare-and-set: it returns false and changes nothing when the
  *   stored state does not equal [from] or the fence is stale.
  * - Expired leases make jobs claimable again (at-least-once semantics).
+ * - Schedule rows follow the same pattern as job rows: [dueSchedules] is an atomic
+ *   fenced claim by the store's clock, filtered to the ids the caller holds definitions
+ *   for, and [completeFire] is a fenced compare-and-set that applies a fire (runs plus
+ *   next fire time) in one transaction. Stores never evaluate schedule expressions.
  */
 public interface JobStore {
     /**
@@ -138,12 +173,55 @@ public interface JobStore {
     public suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long? = null): Boolean
 
     /**
-     * Returns schedules that are due by the STORE's own clock, marking each as fired so
-     * no other node emits the same run. Deliberately takes no `now` parameter: no SPI
-     * method accepts caller-supplied time for comparisons, because the caller's clock
-     * is never authoritative.
+     * Registers or reconciles code-defined schedules, once per runtime start. Per spec:
+     * an unknown [ScheduleSpec.id] inserts the row with `nextFireAt = fireAt`; a known id
+     * with an EQUAL fingerprint updates nothing (timing state is preserved across
+     * restarts); a known id with a DIFFERENT fingerprint overwrites kind, fingerprint and
+     * description, sets `nextFireAt = fireAt`, and clears any lease. Last writer wins;
+     * concurrent upserts from nodes running different code versions are expected during
+     * rolling deploys. Upsert never deletes: a schedule removed from code keeps its row
+     * and simply stops being fired, because no node passes its id to [dueSchedules].
      */
-    public suspend fun dueSchedules(limit: Int): List<ScheduleFire>
+    public suspend fun upsertSchedules(schedules: List<ScheduleSpec>)
+
+    /**
+     * Claims up to [limit] due schedules for [worker] under a lease of [lease], soonest
+     * next-fire first. A schedule is due when its stored `nextFireAt` is non-null and not
+     * in the future by the STORE's own clock; no SPI method accepts caller-supplied time
+     * for comparisons, because the caller's clock is never authoritative. Only rows whose
+     * id is in [ids] are returned; other rows are left untouched, so a node only ever
+     * fires schedules it holds a definition for (the schedule analogue of [claim]'s kind
+     * filter). An empty [ids] returns an empty list.
+     *
+     * Atomic across concurrent callers: a due schedule is claimed by exactly one caller
+     * per lease window (SKIP LOCKED or CAS, never an in-process check). Each claim bumps
+     * the row's fence. A claim whose lease expires before [completeFire] makes the row
+     * claimable again with a fresh fence; the previous claim's completeFire is then stale
+     * and rejected, so a fire is never applied twice.
+     */
+    public suspend fun dueSchedules(
+        ids: Set<String>,
+        limit: Int,
+        lease: Duration,
+        worker: WorkerId,
+    ): List<ScheduleFire>
+
+    /**
+     * Applies one claimed fire ATOMICALLY: inserts [runs] with [enqueue] semantics
+     * (including the uniqueKey rule), advances the schedule's `nextFireAt` to
+     * [nextFireAt] (null makes the schedule dormant), sets `lastFiredAt` to the store's
+     * clock, and releases the lease, all in one transaction. Compare-and-set on [fence]:
+     * returns null and changes NOTHING, inserts no runs, when the stored fence differs.
+     * On success returns the run ids in [runs] order, existing ids on uniqueKey dedup,
+     * exactly like [enqueue]. An empty [runs] is a legal completion (a misfire handled
+     * with Skip, for example) and returns an empty list.
+     */
+    public suspend fun completeFire(
+        scheduleId: String,
+        fence: Long,
+        runs: List<NewJob>,
+        nextFireAt: Instant?,
+    ): List<JobId>?
 
     /** Deletes terminal runs past their retention. Runs as a built-in recurring job. */
     public suspend fun sweep(retention: RetentionPolicy)

@@ -22,6 +22,10 @@ public final class com/eventslooped/klokka/ktor/KlokkaConfig {
 	public static synthetic fun queue$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)V
 	public final fun queue-X7_D_ro (Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;)V
 	public static synthetic fun queue-X7_D_ro$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)V
+	public final fun recurring-ItcKCME (Ljava/lang/String;Lcom/eventslooped/klokka/Schedule;Lcom/eventslooped/klokka/MisfirePolicy;JLcom/eventslooped/klokka/OverlapPolicy;Ljava/lang/String;Lkotlin/jvm/functions/Function2;)V
+	public static synthetic fun recurring-ItcKCME$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;Lcom/eventslooped/klokka/Schedule;Lcom/eventslooped/klokka/MisfirePolicy;JLcom/eventslooped/klokka/OverlapPolicy;Ljava/lang/String;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)V
+	public final fun recurring-qJ-Q1rc (Ljava/lang/String;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Lcom/eventslooped/klokka/Schedule;Lcom/eventslooped/klokka/MisfirePolicy;JLcom/eventslooped/klokka/OverlapPolicy;Ljava/lang/String;)V
+	public static synthetic fun recurring-qJ-Q1rc$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Lcom/eventslooped/klokka/Schedule;Lcom/eventslooped/klokka/MisfirePolicy;JLcom/eventslooped/klokka/OverlapPolicy;Ljava/lang/String;ILjava/lang/Object;)V
 	public final fun setClaimBatch (I)V
 	public final fun setClock (Lkotlin/time/Clock;)V
 	public final fun setCodec (Lcom/eventslooped/klokka/PayloadCodec;)V

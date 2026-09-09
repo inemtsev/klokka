@@ -76,7 +76,7 @@ fun Application.module() {
         handle(SendWelcome) { payload ->          // this: JobContext, suspend
             emailService.sendWelcome(payload.userId, payload.locale)
         }
-        recurring("session-cleanup", every = 1.hours) {
+        recurring("session-cleanup", every(1.hours)) {
             sessions.purgeExpired()
         }
     }
@@ -115,7 +115,7 @@ routing {
 klokka.schedule(SendReceipt, receipt, at = Clock.System.now() + 10.minutes)
 
 klokka.recurring("daily-digest", DigestJob, payload = DigestConfig(...),
-    cron = "0 9 * * 1-5", zone = TimeZone.of("America/Toronto"),
+    schedule = cron("0 9 * * 1-5", TimeZone.of("America/Toronto")),
     misfire = MisfirePolicy.FireOnce)              // or Skip, or CatchUp(atMost = 3)
 ```
 
@@ -199,12 +199,12 @@ Built-ins cover exponential backoff with jitter and explicit interval lists. A `
 
 ### Scheduling correctness
 
-- **Misfire policy is explicit and per-schedule**: `Skip` (a missed billing run must never double-fire), `FireOnce` (catch up a metrics rollup once), or `CatchUp(atMost = n)` (bounded backfill), gated by a misfire threshold so a GC pause is not a misfire.
+- **Misfire policy is explicit and per-schedule**: `Skip` (a missed billing run must never double-fire), `FireOnce` (catch up a metrics rollup once), or `CatchUp(atMost = n)` (bounded backfill), gated by a misfire threshold (default one minute) so a GC pause is not a misfire. Semantics, settled 2026-09-04: within the threshold the run fires with `scheduledFor` = the intended time and the next fire is computed from that intended time, so the cadence never drifts; beyond it, `FireOnce` runs the MOST RECENT missed fire, `CatchUp(n)` runs the most recent `n` missed fires oldest first, and in all misfire cases the next fire is computed from the store's now.
 - **Timezone is stored per schedule** and next-fire times are recomputed against live zone rules, with documented behavior for nonexistent and ambiguous local times around DST transitions.
 - The typed DSL (`every(5.minutes)`, `dailyAt(9, 0, zone)`) is the primary API. Five-field standard cron is the escape hatch, seconds opt-in, validated at install time with a helpful error. Quartz-style `L`/`W`/`#` operators are intentionally out of scope: complex business calendars ("last business day of the month") are better served by type-safe DSL builders than by opaque cron string extensions.
 - **Priority is queue ordering**, Hangfire's model: workers drain queues in the order they are declared (`critical` before `default`). There are no per-job integer priorities; they complicate `SKIP LOCKED` claim queries and ruin partial-index strategies at scale. Unlike Hangfire, where queue-order semantics silently differ by storage backend, the ordering contract is part of the SPI and enforced by the conformance kit.
 - The handler context exposes **`scheduledFor`**, the intended fire time, so "which window of data does this run cover" is answerable and idempotency keys are derivable.
-- `triggerNow()` runs a schedule immediately without shifting it. An anti-overlap mode schedules the next run only after the current one completes.
+- `triggerNow()` runs a schedule immediately without shifting it. Anti-overlap in v0.1 is `OverlapPolicy.SkipIfRunning`: a fire while a previous run of the schedule is non-terminal emits nothing, implemented with the store's uniqueKey rule under the reserved key `klokka:schedule:<id>` (no new SPI surface). A fixed-delay mode (next run computed from completion) needs the run's terminal transition and the schedule advance to be atomic, so it is deferred to M2.
 
 ### Lifecycle
 
@@ -221,8 +221,14 @@ interface JobStore {
                       kinds: Set<String>,           // only kinds this worker binds
                       limit: Int, lease: Duration, worker: WorkerId): List<ClaimedJob>
     suspend fun heartbeat(ids: List<JobId>, worker: WorkerId, extend: Duration)
-    suspend fun transition(id: JobId, from: JobState, to: JobState): Boolean
-    suspend fun dueSchedules(now: Instant, limit: Int): List<ScheduleFire>
+    suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long?): Boolean
+    // Schedules: the store persists timing state and leases due rows; the runtime owns
+    // all schedule math. See the JobStore KDoc for the binding contract.
+    suspend fun upsertSchedules(schedules: List<ScheduleSpec>)
+    suspend fun dueSchedules(ids: Set<String>,      // only schedules this node holds definitions for
+                             limit: Int, lease: Duration, worker: WorkerId): List<ScheduleFire>
+    suspend fun completeFire(scheduleId: String, fence: Long,
+                             runs: List<NewJob>, nextFireAt: Instant?): List<JobId>?
     suspend fun sweep(retention: RetentionPolicy)
 }
 
@@ -324,6 +330,11 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Handler binding | One verb, `handle`, overloaded for a lambda and a `JobHandler` object; no separate `register` | 2026-08-22 |
 | Default queue | Per-kind default on the `JobType` descriptor (`jobType(kind, queue = ...)`), because the producer writes the queue onto the row and the descriptor is what producer and worker code share; `JobOptions.queue` overrides per enqueue; handler registration never names a queue | 2026-08-22 |
 | Claim by bound kinds | `claim` takes the worker's bound kinds and returns only those rows; a kind bound nowhere waits in Enqueued instead of being dead-lettered by a worker that cannot run it (rolling deploys, shared queues across heterogeneous fleets); #33 | 2026-08-22 |
+| Recurring store contract | Dumb store, smart runtime: the store persists timing state (nextFireAt, lastFiredAt, lease, fence, definition fingerprint) and never evaluates an expression; all schedule math lives in the runtime. Three SPI methods: `upsertSchedules`, `dueSchedules` (atomic fenced claim by the store's clock), `completeFire` (fenced CAS applying runs + next fire time in one transaction) | 2026-09-04 |
+| Schedule reconciliation | Upsert on every runtime start; equal fingerprint keeps timing state, changed fingerprint resets nextFireAt (last writer wins across rolling deploys); a schedule removed from code keeps its row and stops firing, because `dueSchedules` is filtered by the ids the node holds definitions for (the schedule analogue of claim-by-bound-kinds); never auto-deleted | 2026-09-04 |
+| Misfire semantics | Per-schedule threshold, default 1 minute. On time: run at the intended fire time, next fire from the intended time (no drift). Missed: Skip emits nothing, FireOnce emits the most recent missed fire, CatchUp(n) the most recent n oldest first; next fire from the store's now | 2026-09-04 |
+| Anti-overlap v0.1 | `OverlapPolicy.SkipIfRunning` via the reserved uniqueKey `klokka:schedule:<id>`; fixed-delay (next-after-completion) deferred to M2 | 2026-09-04 |
+| Schedule provenance | Job rows, `ClaimedJob`, `JobContext` and events carry `scheduleId`; `triggerNow` emits an ordinary run with it set, without shifting the schedule | 2026-09-04 |
 
 ## 13. Alternatives considered
 
@@ -334,6 +345,8 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 **Lock-only design (ShedLock-style).** Rejected as the core model. A lock deduplicates; it does not retry, recover, or record. ShedLock's own README says it best: it is not and will never be a scheduler.
 
 **Polling-only storage access.** Rejected. Polling is the single most-complained-about operational property of Hangfire's default storage. Push with poll fallback costs little and removes the whole complaint class.
+
+**No schedules table (unique-key chain).** Rejected. GoodJob-style: every fire is a job carrying `uniqueKey = schedule:<id>:<fireTime>`, each run enqueues its successor, every node reconciles periodically. Reuses existing SPI surface, but an operator-cancelled run silently breaks the chain, stale runs survive definition changes, and both the M2 schedules dashboard and runtime-mutable schedules need the table anyway.
 
 **A workflow engine.** Out of scope permanently. Durable execution (Temporal, Restate, DBOS) is a different product with a different failure model. Klokka stops at continuations and batches, and says so.
 

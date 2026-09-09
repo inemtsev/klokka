@@ -62,6 +62,7 @@ private val REQUEUE_GRACE_PERIOD = 5.seconds
 internal class WorkerEngine(
     private val store: JobStore,
     private val registry: JobRegistry,
+    private val recurring: RecurringRegistry,
     private val settings: KlokkaSettings,
     private val scope: CoroutineScope,
     private val emit: (JobEvent) -> Unit,
@@ -76,11 +77,14 @@ internal class WorkerEngine(
     private val inFlightMutex = Mutex()
     private val inFlightIds = mutableSetOf<JobId>()
 
-    /** Launches the claim loop, heartbeater and sweeper, each under its own restart supervisor. */
+    /** Launches the claim loop, heartbeater, sweeper and scheduler, each under its own restart supervisor. */
     fun start() {
         scope.launchSupervised { runClaimLoop() }
         scope.launchSupervised { runHeartbeater() }
         scope.launchSupervised { runSweeper() }
+        if (!recurring.isEmpty()) {
+            scope.launchSupervised { runScheduler() }
+        }
     }
 
     /** Graceful shutdown; see [KlokkaRuntime.drain] for the contract. */
@@ -170,6 +174,61 @@ internal class WorkerEngine(
         }
     }
 
+    // ---- scheduler ----------------------------------------------------------------------------
+
+    /**
+     * Registers the declared schedules with the store, then fires due ones forever. Also
+     * runs after a supervisor restart; re-upserting is a no-op for unchanged fingerprints,
+     * so the registration self-heals along with the loop.
+     */
+    private suspend fun runScheduler() {
+        store.upsertSchedules(recurring.specs { schedule -> schedule.nextAfter(settings.clock.now()) })
+        while (true) {
+            if (!drainingFlow.value) {
+                schedulerRound()
+            }
+            delay(settings.pollInterval)
+        }
+    }
+
+    private suspend fun schedulerRound() {
+        val fires = store.dueSchedules(recurring.ids(), settings.claimBatch, settings.lease, settings.workerId)
+        for (fire in fires) {
+            // Unreachable with a conforming store: dueSchedules is filtered by recurring.ids().
+            val definition = recurring.get(fire.scheduleId) ?: continue
+            val computation = computeFire(definition, fire)
+            val runIds = store.completeFire(fire.scheduleId, fire.fence, computation.runs, computation.nextFireAt) ?: continue
+            val at = settings.clock.now()
+            if (computation.missedFires > 0) {
+                emit(
+                    JobEvent.ScheduleMisfired(
+                        scheduleId = fire.scheduleId,
+                        kind = definition.kind,
+                        at = at,
+                        missedFires = computation.missedFires,
+                        policy = definition.misfire,
+                        emitted = computation.runs.size,
+                    ),
+                )
+            }
+            for ((index, run) in computation.runs.withIndex()) {
+                emit(
+                    JobEvent.Enqueued(
+                        jobId = runIds[index],
+                        kind = run.kind,
+                        at = at,
+                        queue = run.queue,
+                        scheduledFor = run.runAt,
+                        scheduleId = fire.scheduleId,
+                    ),
+                )
+            }
+            if (computation.runs.isNotEmpty()) {
+                nudgeClaimLoop()
+            }
+        }
+    }
+
     // ---- execution sequence -------------------------------------------------------------------
 
     private suspend fun executeJob(job: ClaimedJob) {
@@ -191,7 +250,16 @@ internal class WorkerEngine(
             val startedAt = settings.clock.now()
             val queueWait = (startedAt - job.scheduledFor).coerceAtLeast(Duration.ZERO)
             val late = queueWait > settings.lateThreshold
-            emit(JobEvent.Started(jobId = job.id, kind = job.kind, at = startedAt, attempt = job.attempt, queueWait = queueWait))
+            emit(
+                JobEvent.Started(
+                    jobId = job.id,
+                    kind = job.kind,
+                    at = startedAt,
+                    attempt = job.attempt,
+                    queueWait = queueWait,
+                    scheduleId = job.scheduleId,
+                ),
+            )
 
             try {
                 withTimeout(job.leaseUntil - settings.clock.now()) {
@@ -229,6 +297,7 @@ internal class WorkerEngine(
                     attempt = job.attempt,
                     runDuration = runDuration,
                     late = late,
+                    scheduleId = job.scheduleId,
                 ),
             )
         }
@@ -255,6 +324,7 @@ internal class WorkerEngine(
                     attempt = job.attempt,
                     error = error,
                     retryAt = retryAt,
+                    scheduleId = job.scheduleId,
                 ),
             )
         }
@@ -269,6 +339,7 @@ internal class WorkerEngine(
                     at = settings.clock.now(),
                     attempts = job.attempt,
                     error = error,
+                    scheduleId = job.scheduleId,
                 ),
             )
         }
@@ -344,6 +415,7 @@ private class RuntimeJobContext(
     override val attempt: Int = job.attempt
     override val enqueuedAt: Instant = job.enqueuedAt
     override val scheduledFor: Instant = job.scheduledFor
+    override val scheduleId: String? = job.scheduleId
 
     override suspend fun progress(fraction: Double) {
         // No sink yet: dashboard wiring lands in issue #15.

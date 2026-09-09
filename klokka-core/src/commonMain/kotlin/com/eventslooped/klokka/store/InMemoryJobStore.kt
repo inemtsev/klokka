@@ -12,6 +12,7 @@ import com.eventslooped.klokka.spi.JobStore
 import com.eventslooped.klokka.spi.NewJob
 import com.eventslooped.klokka.spi.PushCapableStore
 import com.eventslooped.klokka.spi.ScheduleFire
+import com.eventslooped.klokka.spi.ScheduleSpec
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,6 +38,7 @@ private class JobRecord(
     val runAt: Instant,
     val uniqueKey: String?,
     val enqueuedAt: Instant,
+    val scheduleId: String?,
 ) {
     var state: JobState = JobState.Scheduled
     var attempts: Int = 0
@@ -47,6 +49,35 @@ private class JobRecord(
     /** Set when [state] becomes terminal. Drives [InMemoryJobStore.sweep]. */
     var terminalAt: Instant? = null
 }
+
+/**
+ * One registered recurring schedule's timing state. Guarded by [InMemoryJobStore]'s
+ * mutex, like [JobRecord].
+ */
+private class ScheduleRecord(
+    val id: String,
+    var kind: String,
+    var fingerprint: String,
+    var description: String,
+    var nextFireAt: Instant?,
+) {
+    var lastFiredAt: Instant? = null
+    var fence: Long = 0
+    var leaseUntil: Instant? = null
+    var holder: WorkerId? = null
+}
+
+/**
+ * Snapshot of a schedule's mutable fields, for tests to assert on without reflection.
+ */
+public data class InMemoryScheduleSnapshot(
+    val kind: String,
+    val fingerprint: String,
+    val description: String,
+    val nextFireAt: Instant?,
+    val lastFiredAt: Instant?,
+    val fence: Long,
+)
 
 /**
  * Snapshot of a stored job's mutable fields, for tests to assert on without reflection.
@@ -66,6 +97,7 @@ public data class InMemoryJobSnapshot(
 public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStore, PushCapableStore {
     private val mutex = Mutex()
     private val records = linkedMapOf<JobId, JobRecord>()
+    private val schedules = linkedMapOf<String, ScheduleRecord>()
     private var counter: Long = 0
 
     private val wakeupFlow =
@@ -76,44 +108,51 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
         )
 
     override suspend fun enqueue(jobs: List<NewJob>): List<JobId> {
+        val result = mutex.withLock { enqueueLocked(jobs, clock.now()) }
+        maybeWakeup(jobs)
+        return result
+    }
+
+    /** Shared by [enqueue] and [completeFire]. The caller must hold [mutex]. */
+    private fun enqueueLocked(jobs: List<NewJob>, now: Instant): List<JobId> {
         val result = ArrayList<JobId>(jobs.size)
-        val insertedRunAts = ArrayList<Instant>()
-        mutex.withLock {
-            val now = clock.now()
-            for (job in jobs) {
-                val existing =
-                    job.uniqueKey?.let { key ->
-                        records.values.firstOrNull { it.uniqueKey == key && !it.state.terminal }
-                    }
-                if (existing != null) {
-                    result.add(existing.id)
-                    continue
+        for (job in jobs) {
+            val existing =
+                job.uniqueKey?.let { key ->
+                    records.values.firstOrNull { it.uniqueKey == key && !it.state.terminal }
                 }
-                counter += 1
-                val id = JobId("job-$counter")
-                val record =
-                    JobRecord(
-                        id = id,
-                        kind = job.kind,
-                        payload = job.payload,
-                        payloadVersion = job.payloadVersion,
-                        queue = job.queue,
-                        runAt = job.runAt,
-                        uniqueKey = job.uniqueKey,
-                        enqueuedAt = now,
-                    )
-                // Due by the store's clock at insert means Enqueued (visible to workers);
-                // a future runAt means Scheduled (waiting for its time). See JobStore.enqueue.
-                record.state = if (job.runAt <= now) JobState.Enqueued else JobState.Scheduled
-                records[id] = record
-                result.add(id)
-                insertedRunAts.add(job.runAt)
+            if (existing != null) {
+                result.add(existing.id)
+                continue
             }
-        }
-        if (insertedRunAts.any { it <= clock.now() }) {
-            wakeupFlow.tryEmit(Unit)
+            counter += 1
+            val id = JobId("job-$counter")
+            val record =
+                JobRecord(
+                    id = id,
+                    kind = job.kind,
+                    payload = job.payload,
+                    payloadVersion = job.payloadVersion,
+                    queue = job.queue,
+                    runAt = job.runAt,
+                    uniqueKey = job.uniqueKey,
+                    enqueuedAt = now,
+                    scheduleId = job.scheduleId,
+                )
+            // Due by the store's clock at insert means Enqueued (visible to workers);
+            // a future runAt means Scheduled (waiting for its time). See JobStore.enqueue.
+            record.state = if (job.runAt <= now) JobState.Enqueued else JobState.Scheduled
+            records[id] = record
+            result.add(id)
         }
         return result
+    }
+
+    /** Spurious wakeups are allowed by the contract, so this checks the inputs, not the inserts. */
+    private fun maybeWakeup(jobs: List<NewJob>) {
+        if (jobs.any { it.runAt <= clock.now() }) {
+            wakeupFlow.tryEmit(Unit)
+        }
     }
 
     override suspend fun claim(
@@ -154,6 +193,7 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                             scheduledFor = record.runAt,
                             leaseUntil = newLeaseUntil,
                             fence = record.fence,
+                            scheduleId = record.scheduleId,
                         ),
                     )
                 }
@@ -209,11 +249,86 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
             true
         }
 
-    /**
-     * Always returns an empty list: schedule registration and the recurring-jobs machinery
-     * that would populate it arrive with issue #11.
-     */
-    override suspend fun dueSchedules(limit: Int): List<ScheduleFire> = emptyList()
+    override suspend fun upsertSchedules(schedules: List<ScheduleSpec>) {
+        mutex.withLock {
+            for (spec in schedules) {
+                val existing = this.schedules[spec.id]
+                if (existing == null) {
+                    this.schedules[spec.id] =
+                        ScheduleRecord(
+                            id = spec.id,
+                            kind = spec.kind,
+                            fingerprint = spec.fingerprint,
+                            description = spec.description,
+                            nextFireAt = spec.fireAt,
+                        )
+                } else if (existing.fingerprint != spec.fingerprint) {
+                    existing.kind = spec.kind
+                    existing.fingerprint = spec.fingerprint
+                    existing.description = spec.description
+                    existing.nextFireAt = spec.fireAt
+                    existing.leaseUntil = null
+                    existing.holder = null
+                }
+                // Equal fingerprint: keep all timing state, per the SPI contract.
+            }
+        }
+    }
+
+    override suspend fun dueSchedules(
+        ids: Set<String>,
+        limit: Int,
+        lease: Duration,
+        worker: WorkerId,
+    ): List<ScheduleFire> {
+        if (limit <= 0 || ids.isEmpty()) return emptyList()
+        return mutex.withLock {
+            val now = clock.now()
+            schedules.values
+                .filter { record ->
+                    val next = record.nextFireAt
+                    val leaseUntil = record.leaseUntil
+                    record.id in ids && next != null && next <= now && (leaseUntil == null || leaseUntil <= now)
+                }
+                .sortedBy { it.nextFireAt }
+                .take(limit)
+                .map { record ->
+                    record.fence += 1
+                    record.leaseUntil = now + lease
+                    record.holder = worker
+                    ScheduleFire(
+                        scheduleId = record.id,
+                        scheduledFor = record.nextFireAt ?: error("filtered on nextFireAt != null"),
+                        now = now,
+                        fence = record.fence,
+                    )
+                }
+        }
+    }
+
+    override suspend fun completeFire(
+        scheduleId: String,
+        fence: Long,
+        runs: List<NewJob>,
+        nextFireAt: Instant?,
+    ): List<JobId>? {
+        val result =
+            mutex.withLock {
+                val record = schedules[scheduleId] ?: return@withLock null
+                if (record.fence != fence) return@withLock null
+                val now = clock.now()
+                val ids = enqueueLocked(runs, now)
+                record.nextFireAt = nextFireAt
+                record.lastFiredAt = now
+                record.leaseUntil = null
+                record.holder = null
+                ids
+            }
+        if (result != null) {
+            maybeWakeup(runs)
+        }
+        return result
+    }
 
     override suspend fun sweep(retention: RetentionPolicy) {
         mutex.withLock {
@@ -238,6 +353,20 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
     }
 
     override fun wakeups(): Flow<Unit> = wakeupFlow.asSharedFlow()
+
+    /** Test hook: reads a schedule's mutable fields without reflection. Null when [id] is unknown. */
+    public suspend fun scheduleSnapshot(id: String): InMemoryScheduleSnapshot? =
+        mutex.withLock {
+            val record = schedules[id] ?: return@withLock null
+            InMemoryScheduleSnapshot(
+                kind = record.kind,
+                fingerprint = record.fingerprint,
+                description = record.description,
+                nextFireAt = record.nextFireAt,
+                lastFiredAt = record.lastFiredAt,
+                fence = record.fence,
+            )
+        }
 
     /** Test hook: reads a job's mutable fields without reflection. Null when [id] is unknown. */
     public suspend fun snapshot(id: JobId): InMemoryJobSnapshot? =

@@ -29,6 +29,12 @@ public interface JobContext {
      */
     public val scheduledFor: Instant
 
+    /**
+     * Id of the recurring schedule that emitted this run (also set by `triggerNow`);
+     * null for directly enqueued jobs.
+     */
+    public val scheduleId: String?
+
     /** Reports progress in `0.0..1.0` for the dashboard. Best-effort, cheap to call. */
     public suspend fun progress(fraction: Double)
 
