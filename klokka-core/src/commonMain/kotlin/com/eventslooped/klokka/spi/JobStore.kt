@@ -177,7 +177,9 @@ public interface JobStore {
      * an unknown [ScheduleSpec.id] inserts the row with `nextFireAt = fireAt`; a known id
      * with an EQUAL fingerprint updates nothing (timing state is preserved across
      * restarts); a known id with a DIFFERENT fingerprint overwrites kind, fingerprint and
-     * description, sets `nextFireAt = fireAt`, and clears any lease. Last writer wins;
+     * description, sets `nextFireAt = fireAt`, clears any lease, AND bumps the fence:
+     * a claim taken under the old definition must not be completable, because its runs
+     * and next fire time were computed from a definition that no longer exists. Last writer wins;
      * concurrent upserts from nodes running different code versions are expected during
      * rolling deploys. Upsert never deletes: a schedule removed from code keeps its row
      * and simply stops being fired, because no node passes its id to [dueSchedules].

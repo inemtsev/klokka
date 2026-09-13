@@ -269,6 +269,8 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                     existing.nextFireAt = spec.fireAt
                     existing.leaseUntil = null
                     existing.holder = null
+                    // A claim taken under the old definition must not be completable.
+                    existing.fence += 1
                 }
                 // Equal fingerprint: keep all timing state, per the SPI contract.
             }

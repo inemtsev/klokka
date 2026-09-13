@@ -9,6 +9,7 @@ import com.eventslooped.klokka.dailyAt
 import com.eventslooped.klokka.jobType
 import com.eventslooped.klokka.ktor.Klokka
 import com.eventslooped.klokka.ktor.klokka
+import com.eventslooped.klokka.spi.JobStore
 import com.eventslooped.klokka.store.InMemoryJobStore
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
@@ -75,10 +76,14 @@ interface RollupStore {
 
 // --- 3. The module ------------------------------------------------------------------------
 
-fun Application.analyticsModule(rollups: RollupStore, clock: Clock = Clock.System) {
+fun Application.analyticsModule(
+    rollups: RollupStore,
+    clock: Clock = Clock.System,
+    store: JobStore = InMemoryJobStore(clock),
+) {
     install(Klokka) {
         this.clock = clock
-        store = InMemoryJobStore(clock)
+        this.store = store
 
         handle(RollUpUsage) { payload ->
             // 24 hours ending at the intended fire time. A redelivered or caught-up run
@@ -149,6 +154,18 @@ class FakeRollupStore : RollupStore {
     }
 }
 
+/**
+ * Schedules are registered with the store when the runtime starts, concurrently with the
+ * test body. A test that jumps the clock must wait for registration first, or the jump
+ * can land before the initial next-fire computation reads the clock. Real clocks move
+ * continuously, so only tests with jumping clocks need this.
+ */
+private suspend fun awaitScheduleRegistered(store: InMemoryJobStore, id: String) {
+    withTimeout(5.seconds) {
+        while (store.scheduleSnapshot(id) == null) yield()
+    }
+}
+
 private val UTC = TimeZone.of("UTC")
 private val MIDNIGHT: Instant = LocalDateTime(2026, 9, 4, 0, 0).toInstant(UTC)
 private val HALF_PAST_TWO: Instant = LocalDateTime(2026, 9, 4, 2, 30).toInstant(UTC)
@@ -159,8 +176,10 @@ class NightlyRollupSampleTest {
         testApplication {
             val clock = MutableClock(MIDNIGHT)
             val rollups = FakeRollupStore()
-            application { analyticsModule(rollups, clock) }
+            val store = InMemoryJobStore(clock)
+            application { analyticsModule(rollups, clock, store) }
             startApplication()
+            awaitScheduleRegistered(store, "nightly-usage-rollup")
 
             // Advancing the clock to 02:30 is all it takes; no real waiting, no sleeps.
             clock.advanceBy(2.hours + 30.minutes)
@@ -177,15 +196,17 @@ class NightlyRollupSampleTest {
         testApplication {
             val clock = MutableClock(MIDNIGHT)
             val rollups = FakeRollupStore()
+            val store = InMemoryJobStore(clock)
             val misfired = CompletableDeferred<JobEvent.ScheduleMisfired>()
             application {
-                analyticsModule(rollups, clock)
+                analyticsModule(rollups, clock, store)
                 klokka.events
                     .filterIsInstance<JobEvent.ScheduleMisfired>()
                     .onEach { misfired.complete(it) }
                     .launchIn(this)
             }
             startApplication()
+            awaitScheduleRegistered(store, "nightly-usage-rollup")
 
             // "Two days of downtime": the clock jumps straight past two 02:30 fires,
             // landing at 01:00, before the third one.
@@ -207,7 +228,8 @@ class NightlyRollupSampleTest {
         testApplication {
             val clock = MutableClock(MIDNIGHT)
             val rollups = FakeRollupStore()
-            application { analyticsModule(rollups, clock) }
+            val store = InMemoryJobStore(clock)
+            application { analyticsModule(rollups, clock, store) }
 
             val response = client.post("/admin/rollup/run")
             assertEquals(HttpStatusCode.Accepted, response.status)
@@ -218,6 +240,7 @@ class NightlyRollupSampleTest {
             assertEquals((MIDNIGHT - 24.hours)..MIDNIGHT, rollup.window)
 
             // The nightly cadence is untouched: 02:30 still fires.
+            awaitScheduleRegistered(store, "nightly-usage-rollup")
             clock.advanceBy(2.hours + 30.minutes)
             withTimeout(5.seconds) {
                 while (rollups.recorded.size < 2) yield()

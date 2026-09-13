@@ -73,11 +73,12 @@ public class InMemoryScheduleStoreTest {
             assertEquals("fp-2", snapshot.fingerprint)
             assertEquals(EPOCH + 6.minutes, snapshot.nextFireAt)
 
-            // The pre-change claim's lease was cleared; its completeFire must not apply either,
+            // The change itself bumps the fence: the pre-change claim's completeFire is
+            // stale immediately, before anyone reclaims.
+            assertNull(store.completeFire("digest", stale.fence, emptyList(), EPOCH + 20.minutes))
             clock.advanceBy(1.minutes)
             val fresh = store.dueSchedules(setOf("digest"), 10, 1.minutes, WORKER).single()
             assertTrue(fresh.fence > stale.fence)
-            assertNull(store.completeFire("digest", stale.fence, emptyList(), EPOCH + 20.minutes))
         }
 
     @Test
