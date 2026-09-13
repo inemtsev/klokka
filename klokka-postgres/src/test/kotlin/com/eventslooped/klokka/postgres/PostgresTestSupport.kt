@@ -35,6 +35,11 @@ internal object PostgresTestSupport {
         }
     }
 
+    /** The container's own coordinates, for child processes that build their own DataSource. */
+    val jdbcUrl: String by lazy { container.jdbcUrl }
+    val username: String by lazy { container.username }
+    val password: String by lazy { container.password }
+
     private val store: PostgresJobStore by lazy {
         PostgresJobStore(dataSource).also { runBlocking { it.migrate() } }
     }
