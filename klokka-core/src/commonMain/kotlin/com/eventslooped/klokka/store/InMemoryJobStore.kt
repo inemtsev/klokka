@@ -4,13 +4,19 @@ package com.eventslooped.klokka.store
 
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
+import com.eventslooped.klokka.JobStatus
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.WorkerId
 import com.eventslooped.klokka.spi.ClaimedJob
+import com.eventslooped.klokka.spi.JobDetails
+import com.eventslooped.klokka.spi.JobQuery
 import com.eventslooped.klokka.spi.JobStore
+import com.eventslooped.klokka.spi.JobSummary
 import com.eventslooped.klokka.spi.NewJob
 import com.eventslooped.klokka.spi.PushCapableStore
+import com.eventslooped.klokka.spi.QueryableStore
+import com.eventslooped.klokka.status
 import com.eventslooped.klokka.spi.ScheduleFire
 import com.eventslooped.klokka.spi.ScheduleSpec
 import kotlinx.coroutines.channels.BufferOverflow
@@ -94,7 +100,7 @@ public data class InMemoryJobSnapshot(
  * all state is lost on restart. All time comparisons use the injected [clock], which plays
  * the role database time plays for a real backend, so tests can drive time deterministically.
  */
-public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStore, PushCapableStore {
+public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStore, PushCapableStore, QueryableStore {
     private val mutex = Mutex()
     private val records = linkedMapOf<JobId, JobRecord>()
     private val schedules = linkedMapOf<String, ScheduleRecord>()
@@ -243,9 +249,7 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                 record.holder = null
                 record.leaseUntil = null
             }
-            if (to.terminal) {
-                record.terminalAt = clock.now()
-            }
+            record.terminalAt = if (to.terminal) clock.now() else null
             true
         }
 
@@ -355,6 +359,55 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
     }
 
     override fun wakeups(): Flow<Unit> = wakeupFlow.asSharedFlow()
+
+    // ---- QueryableStore -----------------------------------------------------------------
+
+    override suspend fun countsByStatus(): Map<JobStatus, Long> =
+        mutex.withLock {
+            records.values.groupingBy { it.state.status }.eachCount().mapValues { it.value.toLong() }
+        }
+
+    override suspend fun listJobs(query: JobQuery): List<JobSummary> =
+        mutex.withLock {
+            records.values
+                .reversed() // insertion order reversed: most recently persisted first
+                .asSequence()
+                .filter { query.status == null || it.state.status == query.status }
+                .filter { query.kind == null || it.kind == query.kind }
+                .filter { query.queue == null || it.queue == query.queue }
+                .drop(query.offset)
+                .take(query.limit)
+                .map { it.toSummary() }
+                .toList()
+        }
+
+    override suspend fun getJob(id: JobId): JobDetails? =
+        mutex.withLock {
+            val record = records[id] ?: return@withLock null
+            JobDetails(
+                summary = record.toSummary(),
+                payload = record.payload,
+                payloadVersion = record.payloadVersion,
+                uniqueKey = record.uniqueKey,
+                fence = record.fence,
+                leaseUntil = if (record.state is JobState.Running) record.leaseUntil else null,
+                holder = if (record.state is JobState.Running) record.holder else null,
+            )
+        }
+
+    private fun JobRecord.toSummary(): JobSummary =
+        JobSummary(
+            id = id,
+            kind = kind,
+            queue = queue,
+            status = state.status,
+            attempt = attempts,
+            runAt = runAt,
+            enqueuedAt = enqueuedAt,
+            scheduleId = scheduleId,
+            retryAt = (state as? JobState.Failed)?.retryAt,
+            terminalAt = terminalAt,
+        )
 
     /** Test hook: reads a schedule's mutable fields without reflection. Null when [id] is unknown. */
     public suspend fun scheduleSnapshot(id: String): InMemoryScheduleSnapshot? =

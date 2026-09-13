@@ -168,7 +168,10 @@ public interface JobStore {
      * [JobState.Running] MUST carry the fence from the worker's [ClaimedJob]:
      * omitting it there silently disables zombie-worker protection.
      * On success, stores clear the lease and holder when [to] is terminal AND when
-     * [to] is [JobState.Failed], which is not terminal but is no longer running.
+     * [to] is [JobState.Failed], which is not terminal but is no longer running. Stores
+     * stamp the terminal timestamp when [to] is terminal and CLEAR it when [to] is not:
+     * a requeued row is live again, and must neither read as terminal to queries nor
+     * inherit a stale timestamp on its next terminal transition.
      */
     public suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long? = null): Boolean
 

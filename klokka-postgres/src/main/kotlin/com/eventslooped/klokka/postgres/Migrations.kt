@@ -11,7 +11,7 @@ import java.sql.Connection
  */
 internal object Migrations {
     /** Ordered migration names; version N is index N-1. Append only, never edit a shipped file. */
-    private val ALL = listOf("V001__initial", "V002__wakeup_notify")
+    private val ALL = listOf("V001__initial", "V002__wakeup_notify", "V003__query_index")
 
     /** Arbitrary but stable key ("klokka" digits) for pg_advisory_lock. */
     private const val ADVISORY_LOCK_KEY = 6_566_763_566L

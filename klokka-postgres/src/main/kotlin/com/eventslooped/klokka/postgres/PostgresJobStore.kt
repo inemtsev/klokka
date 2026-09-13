@@ -4,13 +4,18 @@ package com.eventslooped.klokka.postgres
 
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
+import com.eventslooped.klokka.JobStatus
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.WorkerId
 import com.eventslooped.klokka.spi.ClaimedJob
+import com.eventslooped.klokka.spi.JobDetails
+import com.eventslooped.klokka.spi.JobQuery
 import com.eventslooped.klokka.spi.JobStore
+import com.eventslooped.klokka.spi.JobSummary
 import com.eventslooped.klokka.spi.NewJob
 import com.eventslooped.klokka.spi.PushCapableStore
+import com.eventslooped.klokka.spi.QueryableStore
 import com.eventslooped.klokka.spi.ScheduleFire
 import com.eventslooped.klokka.spi.ScheduleSpec
 import kotlinx.coroutines.CoroutineDispatcher
@@ -92,7 +97,7 @@ public class PostgresStoreConfig(
 public class PostgresJobStore(
     private val dataSource: DataSource,
     private val config: PostgresStoreConfig = PostgresStoreConfig(),
-) : JobStore, PushCapableStore {
+) : JobStore, PushCapableStore, QueryableStore {
     @Volatile
     private var migrated = false
     private val migrationLock = Any()
@@ -260,7 +265,7 @@ public class PostgresJobStore(
             SET state = ?, retry_at = ?,
                 lease_until = CASE WHEN ? THEN NULL ELSE lease_until END,
                 holder      = CASE WHEN ? THEN NULL ELSE holder END,
-                terminal_at = CASE WHEN ? THEN now() ELSE terminal_at END
+                terminal_at = CASE WHEN ? THEN now() ELSE NULL END
             WHERE id = ? AND state = ?
               AND (? OR retry_at = ?)
               AND (? OR fence = ?)
@@ -432,6 +437,92 @@ public class PostgresJobStore(
             }
         }.flowOn(config.dispatcher)
 
+    // ---- queries --------------------------------------------------------------------------
+
+    override suspend fun countsByStatus(): Map<JobStatus, Long> =
+        withConnection { connection ->
+            connection.prepareStatement("SELECT state, count(*) FROM klokka_jobs GROUP BY state").use { ps ->
+                ps.executeQuery().use { rs ->
+                    val counts = LinkedHashMap<JobStatus, Long>()
+                    while (rs.next()) {
+                        counts[JobStatus.valueOf(rs.getString(1))] = rs.getLong(2)
+                    }
+                    counts
+                }
+            }
+        }
+
+    override suspend fun listJobs(query: JobQuery): List<JobSummary> {
+        // Dynamic WHERE from the non-null filters, conditions and params kept in step.
+        val conditions = mutableListOf<String>()
+        val params = mutableListOf<String>()
+        query.status?.let {
+            conditions += "state = ?"
+            params += it.name
+        }
+        query.kind?.let {
+            conditions += "kind = ?"
+            params += it
+        }
+        query.queue?.let {
+            conditions += "queue = ?"
+            params += it.value
+        }
+        val where = if (conditions.isEmpty()) "" else " WHERE " + conditions.joinToString(" AND ")
+        val sql = """
+            SELECT id, kind, queue, state, attempt, run_at, enqueued_at, schedule_id, retry_at, terminal_at
+            FROM klokka_jobs$where
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+        """
+        return withConnection { connection ->
+            connection.prepareStatement(sql).use { ps ->
+                params.forEachIndexed { index, value -> ps.setString(index + 1, value) }
+                ps.setInt(params.size + 1, query.limit)
+                ps.setInt(params.size + 2, query.offset)
+                ps.executeQuery().use { rs ->
+                    val result = ArrayList<JobSummary>()
+                    while (rs.next()) {
+                        result += rs.toSummary()
+                    }
+                    result
+                }
+            }
+        }
+    }
+
+    override suspend fun getJob(id: JobId): JobDetails? {
+        val numericId = id.value.toLongOrNull() ?: return null
+        val sql = """
+            SELECT id, kind, queue, state, attempt, run_at, enqueued_at, schedule_id, retry_at, terminal_at,
+                   payload, payload_version, unique_key, fence, lease_until, holder
+            FROM klokka_jobs
+            WHERE id = ?
+        """
+        return withConnection { connection ->
+            connection.prepareStatement(sql).use { ps ->
+                ps.setLong(1, numericId)
+                ps.executeQuery().use { rs ->
+                    if (!rs.next()) {
+                        null
+                    } else {
+                        val summary = rs.toSummary()
+                        val running = summary.status == JobStatus.Running
+                        JobDetails(
+                            summary = summary,
+                            payload = rs.getString(11),
+                            payloadVersion = rs.getInt(12),
+                            uniqueKey = rs.getString(13),
+                            fence = rs.getLong(14),
+                            leaseUntil = if (running) rs.instantOrNull(15) else null,
+                            holder = if (running) rs.getString(16)?.let { WorkerId(it) } else null,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     // ---- sweep ----------------------------------------------------------------------------
 
     override suspend fun sweep(retention: RetentionPolicy) {
@@ -496,7 +587,32 @@ private fun Instant.toDb(): OffsetDateTime {
 private fun ResultSet.instant(column: Int): Instant =
     getObject(column, OffsetDateTime::class.java).toInstant().toKotlinInstant()
 
+private fun ResultSet.instantOrNull(column: Int): Instant? =
+    getObject(column, OffsetDateTime::class.java)?.toInstant()?.toKotlinInstant()
+
 private fun ResultSet.singleId(): JobId {
     check(next()) { "INSERT ... RETURNING produced no row" }
     return JobId(getLong(1).toString())
 }
+
+/**
+ * Maps the first ten columns of a queries-section SELECT (id, kind, queue, state, attempt,
+ * run_at, enqueued_at, schedule_id, retry_at, terminal_at) to a [JobSummary]. [listJobs] and
+ * [getJob][PostgresJobStore.getJob] both select exactly this prefix, in this order, so their
+ * result sets share this mapping. retryAt and terminalAt are read unconditionally: by
+ * construction retry_at is NULL outside JobState.Failed and terminal_at is NULL outside a
+ * terminal state, so no state check is needed here.
+ */
+private fun ResultSet.toSummary(): JobSummary =
+    JobSummary(
+        id = JobId(getLong(1).toString()),
+        kind = getString(2),
+        queue = QueueName(getString(3)),
+        status = JobStatus.valueOf(getString(4)),
+        attempt = getInt(5),
+        runAt = instant(6),
+        enqueuedAt = instant(7),
+        scheduleId = getString(8),
+        retryAt = instantOrNull(9),
+        terminalAt = instantOrNull(10),
+    )

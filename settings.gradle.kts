@@ -16,3 +16,4 @@ rootProject.name = "klokka"
 include(":klokka-core")
 include(":klokka-ktor")
 include(":klokka-postgres")
+include(":klokka-dashboard")

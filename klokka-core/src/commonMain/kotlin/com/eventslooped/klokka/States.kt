@@ -51,6 +51,34 @@ public sealed interface JobState {
 }
 
 /**
+ * The kind of a [JobState], without per-state data. What queries filter by and dashboards
+ * group by: [JobState.Failed] carries its retry time, but "show me failed jobs" is about
+ * the kind of state, not one specific value of it. Names match [JobState] one to one.
+ */
+public enum class JobStatus {
+    Scheduled,
+    Enqueued,
+    Running,
+    Succeeded,
+    Failed,
+    DeadLettered,
+    Cancelled,
+}
+
+/** The [JobStatus] classifying this state. */
+public val JobState.status: JobStatus
+    get() =
+        when (this) {
+            is JobState.Scheduled -> JobStatus.Scheduled
+            is JobState.Enqueued -> JobStatus.Enqueued
+            is JobState.Running -> JobStatus.Running
+            is JobState.Succeeded -> JobStatus.Succeeded
+            is JobState.Failed -> JobStatus.Failed
+            is JobState.DeadLettered -> JobStatus.DeadLettered
+            is JobState.Cancelled -> JobStatus.Cancelled
+        }
+
+/**
  * In-process lifecycle events, emitted by the runtime as a hot [kotlinx.coroutines.flow.SharedFlow].
  * This is the only observability primitive in the core: metrics and tracing modules are built on it,
  * and applications may subscribe directly for custom alerting.

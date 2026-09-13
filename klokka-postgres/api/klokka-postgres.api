@@ -1,11 +1,14 @@
-public final class com/eventslooped/klokka/postgres/PostgresJobStore : com/eventslooped/klokka/spi/JobStore, com/eventslooped/klokka/spi/PushCapableStore {
+public final class com/eventslooped/klokka/postgres/PostgresJobStore : com/eventslooped/klokka/spi/JobStore, com/eventslooped/klokka/spi/PushCapableStore, com/eventslooped/klokka/spi/QueryableStore {
 	public fun <init> (Ljavax/sql/DataSource;Lcom/eventslooped/klokka/postgres/PostgresStoreConfig;)V
 	public synthetic fun <init> (Ljavax/sql/DataSource;Lcom/eventslooped/klokka/postgres/PostgresStoreConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun claim-ARRUTgc (Ljava/util/List;Ljava/util/Set;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun completeFire (Ljava/lang/String;JLjava/util/List;Lkotlin/time/Instant;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun countsByStatus (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun dueSchedules-F0kyGKk (Ljava/util/Set;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun enqueue (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getJob-EYbf1d4 (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun heartbeat-Yj_zwhA (Ljava/util/List;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun listJobs (Lcom/eventslooped/klokka/spi/JobQuery;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun migrate (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun sweep (Lcom/eventslooped/klokka/RetentionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun transition-F7Mbr6Q (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

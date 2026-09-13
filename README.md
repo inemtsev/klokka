@@ -2,7 +2,7 @@
 
 Persistent background jobs for Ktor. A coroutines-native queue and scheduler with typed suspend handlers, retries, transactional enqueue, and a live dashboard, on the database you already run. In Norwegian, something reliable "går som ei klokke": it runs like a clock.
 
-> **Status: pre-release.** The core runtime, recurring jobs, the in-memory store, and the Ktor plugin work and are tested; nothing is on Maven Central yet. The Postgres store and the dashboard are the current milestone. See [Roadmap](#roadmap) and the [design document](docs/design.md).
+> **Status: pre-release.** The core runtime, recurring jobs, both stores (in-memory and Postgres with LISTEN/NOTIFY push), the Ktor plugin, and the minimal dashboard work and are tested, including a multi-node kill -9 suite; nothing is on Maven Central yet. Publishing is what remains of the current milestone. See [Roadmap](#roadmap) and the [design document](docs/design.md).
 
 ## Why
 
