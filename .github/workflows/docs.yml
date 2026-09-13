@@ -1,0 +1,51 @@
+# Publishes the aggregated Dokka API reference to GitHub Pages on every push to main.
+# The site is generated from KDoc, so it cannot drift from the source the way hand-written
+# API docs do. Kept out of `check` so a docs failure never blocks a code PR; the tradeoff is
+# that a broken KDoc reference surfaces here rather than in CI.
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+
+      - name: Generate API reference
+        run: ./gradlew dokkaGenerate
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/dokka/html
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

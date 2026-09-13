@@ -5,9 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-group = "com.eventslooped"
-version = "0.1.0-SNAPSHOT"
-
 kotlin {
     jvmToolchain(17)
 

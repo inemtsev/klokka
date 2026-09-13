@@ -5,9 +5,6 @@ plugins {
     `java-library`
 }
 
-group = "com.eventslooped"
-version = "0.1.0-SNAPSHOT"
-
 kotlin {
     jvmToolchain(17)
 
