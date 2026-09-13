@@ -335,6 +335,7 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Misfire semantics | Per-schedule threshold, default 1 minute. On time: run at the intended fire time, next fire from the intended time (no drift). Missed: Skip emits nothing, FireOnce emits the most recent missed fire, CatchUp(n) the most recent n oldest first; next fire from the store's now | 2026-09-04 |
 | Anti-overlap v0.1 | `OverlapPolicy.SkipIfRunning` via the reserved uniqueKey `klokka:schedule:<id>`; fixed-delay (next-after-completion) deferred to M2 | 2026-09-04 |
 | Schedule provenance | Job rows, `ClaimedJob`, `JobContext` and events carry `scheduleId`; `triggerNow` emits an ordinary run with it set, without shifting the schedule | 2026-09-04 |
+| Wake-up NOTIFY lives in the schema | Push wake-ups come from AFTER INSERT/UPDATE triggers calling `pg_notify`, not from application code, so every write path that makes a job claimable notifies: Klokka's enqueue, the future transactional enqueue on the application's own connection, dashboard or psql requeues. Commit-time delivery makes "notify iff the job exists" automatic. The listener is one dedicated session-mode connection; a dead listener degrades to poll latency, never to lost jobs | 2026-09-13 |
 
 ## 13. Alternatives considered
 

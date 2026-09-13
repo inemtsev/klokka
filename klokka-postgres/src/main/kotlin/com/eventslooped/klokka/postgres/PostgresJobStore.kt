@@ -10,11 +10,18 @@ import com.eventslooped.klokka.WorkerId
 import com.eventslooped.klokka.spi.ClaimedJob
 import com.eventslooped.klokka.spi.JobStore
 import com.eventslooped.klokka.spi.NewJob
+import com.eventslooped.klokka.spi.PushCapableStore
 import com.eventslooped.klokka.spi.ScheduleFire
 import com.eventslooped.klokka.spi.ScheduleSpec
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import org.postgresql.PGConnection
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -32,6 +39,15 @@ private val TERMINAL_STATES_SQL = TERMINAL_STATES.joinToString(", ") { "'$it'" }
 
 /** How often the uniqueKey insert/select race (a conflicting row turning terminal in between) is retried. */
 private const val UNIQUE_KEY_RETRIES = 5
+
+/** The NOTIFY channel the V002 triggers publish on. */
+private const val WAKEUP_CHANNEL = "klokka_wakeup"
+
+/**
+ * Ceiling on one blocking getNotifications call. Coroutine cancellation cannot interrupt
+ * a blocked socket read, so this bounds how long an unsubscribe or shutdown waits.
+ */
+private const val NOTIFICATION_WAIT_MILLIS = 500
 
 /**
  * Tuning for [PostgresJobStore]. Everything has a production-sane default.
@@ -76,7 +92,7 @@ public class PostgresStoreConfig(
 public class PostgresJobStore(
     private val dataSource: DataSource,
     private val config: PostgresStoreConfig = PostgresStoreConfig(),
-) : JobStore {
+) : JobStore, PushCapableStore {
     @Volatile
     private var migrated = false
     private val migrationLock = Any()
@@ -377,6 +393,44 @@ public class PostgresJobStore(
                 connection.autoCommit = true
             }
         }
+
+    // ---- wakeups --------------------------------------------------------------------------
+
+    /**
+     * LISTEN/NOTIFY push wake-ups, fed by the V002 schema triggers on every write that
+     * makes a job claimable. Delivery is at COMMIT, so a wake-up never precedes the row
+     * it announces; batch inserts collapse to one notification.
+     *
+     * While collected, this flow holds ONE dedicated connection from the [DataSource]
+     * (LISTEN is connection-scoped) and occupies one [PostgresStoreConfig.dispatcher]
+     * thread. The connection must reach Postgres directly or through a session-mode
+     * pooler; PgBouncer transaction pooling breaks LISTEN.
+     *
+     * One hint is emitted immediately after LISTEN is established, so work enqueued
+     * while no listener existed (startup, a reconnect gap) is claimed at once instead of
+     * at the next poll. A dead connection makes the flow throw: reconnecting is the
+     * caller's loop (the runtime restarts collection with backoff, and its poll ticker
+     * covers the gap), so the worst failure mode of push is poll latency.
+     */
+    override fun wakeups(): Flow<Unit> =
+        flow {
+            if (config.autoMigrate) runMigrations()
+            dataSource.connection.use { connection ->
+                config.schema?.let { schema ->
+                    connection.createStatement().use { it.execute("SET search_path TO $schema") }
+                }
+                connection.createStatement().use { it.execute("LISTEN $WAKEUP_CHANNEL") }
+                val pg = connection.unwrap(PGConnection::class.java)
+                emit(Unit) // the listener is live from here; cover anything that arrived before it
+                while (true) {
+                    val notifications = pg.getNotifications(NOTIFICATION_WAIT_MILLIS)
+                    if (!notifications.isNullOrEmpty()) {
+                        emit(Unit)
+                    }
+                    currentCoroutineContext().ensureActive()
+                }
+            }
+        }.flowOn(config.dispatcher)
 
     // ---- sweep ----------------------------------------------------------------------------
 

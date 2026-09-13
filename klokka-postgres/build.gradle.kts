@@ -26,10 +26,13 @@ kotlin {
 
 dependencies {
     api(project(":klokka-core"))
+    // The listener half of LISTEN/NOTIFY has no standard JDBC API; PGConnection is pgjdbc.
+    // Nobody reaches Postgres over JDBC without this driver anyway, and an application
+    // pinning its own version wins conflict resolution.
+    implementation(libs.postgresql)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.postgresql)
     testImplementation(libs.testcontainers.postgresql)
     // Surfaces Testcontainers/driver logs in test output; no main-source logging dependency.
     testRuntimeOnly(libs.slf4j.simple)
