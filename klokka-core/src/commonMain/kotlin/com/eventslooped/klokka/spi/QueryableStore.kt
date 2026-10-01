@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.spi
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobStatus
 import com.eventslooped.klokka.QueueName
@@ -61,6 +62,12 @@ public data class JobDetails(
     val leaseUntil: Instant?,
     /** The worker holding the lease while Running; null otherwise. */
     val holder: WorkerId?,
+    /**
+     * The most recent failure recorded by [JobStore.transition], or null if no attempt has
+     * failed. Kept across requeue and later success: [JobError.attempt] says which run it
+     * came from.
+     */
+    val lastError: JobError?,
 )
 
 /**

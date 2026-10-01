@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.store
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
 import com.eventslooped.klokka.JobStatus
@@ -54,6 +55,9 @@ private class JobRecord(
 
     /** Set when [state] becomes terminal. Drives [InMemoryJobStore.sweep]. */
     var terminalAt: Instant? = null
+
+    /** Replaced by each transition that carries an error, never cleared. */
+    var lastError: JobError? = null
 }
 
 /**
@@ -240,13 +244,14 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
         }
     }
 
-    override suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long?): Boolean =
+    override suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long?, error: JobError?): Boolean =
         mutex.withLock {
             val record = records[id] ?: return@withLock false
             if (record.state != from) return@withLock false
             if (fence != null && record.fence != fence) return@withLock false
 
             record.state = to
+            if (error != null) record.lastError = error
             if (to.terminal || to is JobState.Failed) {
                 record.holder = null
                 record.leaseUntil = null
@@ -394,6 +399,7 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                 fence = record.fence,
                 leaseUntil = if (record.state is JobState.Running) record.leaseUntil else null,
                 holder = if (record.state is JobState.Running) record.holder else null,
+                lastError = record.lastError,
             )
         }
 

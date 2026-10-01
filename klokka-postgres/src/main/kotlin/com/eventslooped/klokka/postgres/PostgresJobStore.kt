@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.postgres
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
 import com.eventslooped.klokka.JobStatus
@@ -257,7 +258,13 @@ public class PostgresJobStore(
         }
     }
 
-    override suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long?): Boolean {
+    override suspend fun transition(
+        id: JobId,
+        from: JobState,
+        to: JobState,
+        fence: Long?,
+        error: JobError?,
+    ): Boolean {
         val numericId = id.value.toLongOrNull() ?: return false
         val clearLease = to.terminal || to is JobState.Failed
         val sql = """
@@ -265,7 +272,12 @@ public class PostgresJobStore(
             SET state = ?, retry_at = ?,
                 lease_until = CASE WHEN ? THEN NULL ELSE lease_until END,
                 holder      = CASE WHEN ? THEN NULL ELSE holder END,
-                terminal_at = CASE WHEN ? THEN now() ELSE NULL END
+                terminal_at = CASE WHEN ? THEN now() ELSE NULL END,
+                error_type    = CASE WHEN ? THEN ? ELSE error_type END,
+                error_message = CASE WHEN ? THEN ? ELSE error_message END,
+                error_stack   = CASE WHEN ? THEN ? ELSE error_stack END,
+                error_attempt = CASE WHEN ? THEN ? ELSE error_attempt END,
+                error_at      = CASE WHEN ? THEN ? ELSE error_at END
             WHERE id = ? AND state = ?
               AND (? OR retry_at = ?)
               AND (? OR fence = ?)
@@ -277,12 +289,23 @@ public class PostgresJobStore(
                 ps.setBoolean(3, clearLease)
                 ps.setBoolean(4, clearLease)
                 ps.setBoolean(5, to.terminal)
-                ps.setLong(6, numericId)
-                ps.setString(7, from.dbName())
-                ps.setBoolean(8, from !is JobState.Failed)
-                ps.setObject(9, (from as? JobState.Failed)?.retryAt?.toDb())
-                ps.setBoolean(10, fence == null)
-                if (fence == null) ps.setNull(11, java.sql.Types.BIGINT) else ps.setLong(11, fence)
+                val hasError = error != null
+                ps.setBoolean(6, hasError)
+                ps.setString(7, error?.type)
+                ps.setBoolean(8, hasError)
+                ps.setString(9, error?.message)
+                ps.setBoolean(10, hasError)
+                ps.setString(11, error?.stackTrace)
+                ps.setBoolean(12, hasError)
+                if (error == null) ps.setNull(13, java.sql.Types.INTEGER) else ps.setInt(13, error.attempt)
+                ps.setBoolean(14, hasError)
+                ps.setObject(15, error?.at?.toDb())
+                ps.setLong(16, numericId)
+                ps.setString(17, from.dbName())
+                ps.setBoolean(18, from !is JobState.Failed)
+                ps.setObject(19, (from as? JobState.Failed)?.retryAt?.toDb())
+                ps.setBoolean(20, fence == null)
+                if (fence == null) ps.setNull(21, java.sql.Types.BIGINT) else ps.setLong(21, fence)
                 ps.executeUpdate() == 1
             }
         }
@@ -495,7 +518,8 @@ public class PostgresJobStore(
         val numericId = id.value.toLongOrNull() ?: return null
         val sql = """
             SELECT id, kind, queue, state, attempt, run_at, enqueued_at, schedule_id, retry_at, terminal_at,
-                   payload, payload_version, unique_key, fence, lease_until, holder
+                   payload, payload_version, unique_key, fence, lease_until, holder,
+                   error_type, error_message, error_stack, error_attempt, error_at
             FROM klokka_jobs
             WHERE id = ?
         """
@@ -516,6 +540,15 @@ public class PostgresJobStore(
                             fence = rs.getLong(14),
                             leaseUntil = if (running) rs.instantOrNull(15) else null,
                             holder = if (running) rs.getString(16)?.let { WorkerId(it) } else null,
+                            lastError = rs.getString(17)?.let { type ->
+                                JobError(
+                                    type = type,
+                                    message = rs.getString(18),
+                                    stackTrace = rs.getString(19),
+                                    attempt = rs.getInt(20),
+                                    at = rs.instant(21),
+                                )
+                            },
                         )
                     }
                 }

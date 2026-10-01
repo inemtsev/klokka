@@ -123,6 +123,7 @@ public class PostgresQueryStoreTest {
             assertEquals("""{"n":1}""", idle.payload)
             assertNull(idle.leaseUntil)
             assertNull(idle.holder)
+            assertNull(idle.lastError, "a never-failed job has no last error")
 
             val claim = store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, 1, 5.minutes, WORKER).single()
             val running = assertNotNull(store.getJob(id))

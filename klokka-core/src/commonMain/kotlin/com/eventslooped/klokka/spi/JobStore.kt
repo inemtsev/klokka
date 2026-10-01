@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.spi
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
 import com.eventslooped.klokka.QueueName
@@ -172,8 +173,22 @@ public interface JobStore {
      * stamp the terminal timestamp when [to] is terminal and CLEAR it when [to] is not:
      * a requeued row is live again, and must neither read as terminal to queries nor
      * inherit a stale timestamp on its next terminal transition.
+     *
+     * [error] is why the attempt failed. When non-null, the store persists it as the row's
+     * last error in the same atomic write as the state change, replacing any previous
+     * record. When null, the stored error is left untouched: a requeue or a later success
+     * keeps the last failure readable through [JobDetails.lastError], with its attempt
+     * number saying which run it belongs to. The runtime passes it on every transition to
+     * [JobState.Failed] and [JobState.DeadLettered] and nowhere else; stores store it and
+     * never interpret it.
      */
-    public suspend fun transition(id: JobId, from: JobState, to: JobState, fence: Long? = null): Boolean
+    public suspend fun transition(
+        id: JobId,
+        from: JobState,
+        to: JobState,
+        fence: Long? = null,
+        error: JobError? = null,
+    ): Boolean
 
     /**
      * Registers or reconciles code-defined schedules, once per runtime start. Per spec:

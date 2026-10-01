@@ -635,4 +635,61 @@ public class KlokkaRuntimeTest {
 
             runtime.drain()
         }
+
+    @Test
+    public fun nonRetryableFailureRecordsLastError() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            registry.handle(TYPE) { _ -> throw BoomException("nope") }
+            val cfg = testSettings(clock)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+
+            val id = runtime.enqueue(TYPE, Payload())
+            runtime.start(backgroundScope)
+            settle(cfg.pollInterval)
+
+            assertEquals(JobState.DeadLettered, store.snapshot(id)?.state)
+            val lastError = store.getJob(id)?.lastError
+            assertNotNull(lastError)
+            assertEquals(BoomException::class.qualifiedName, lastError.type)
+            assertEquals("nope", lastError.message)
+            assertEquals(1, lastError.attempt)
+            assertEquals(clock.now(), lastError.at)
+
+            runtime.drain()
+        }
+
+    @Test
+    public fun lastErrorSurvivesALaterSuccess() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            var calls = 0
+            registry.handle(TYPE, retry = RetryPolicy.intervals(listOf(1.seconds))) { _ ->
+                calls += 1
+                if (calls == 1) error("transient failure")
+            }
+            val cfg = testSettings(clock)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+
+            val id = runtime.enqueue(TYPE, Payload())
+            runtime.start(backgroundScope)
+            settle(cfg.pollInterval)
+
+            clock.advanceBy(1.seconds)
+            advanceTimeBy(cfg.pollInterval * 3)
+            runCurrent()
+
+            assertEquals(JobState.Succeeded, store.snapshot(id)?.state)
+            val lastError = store.getJob(id)?.lastError
+            assertNotNull(lastError)
+            assertEquals(IllegalStateException::class.qualifiedName, lastError.type)
+            assertEquals("transient failure", lastError.message)
+            assertEquals(1, lastError.attempt)
+
+            runtime.drain()
+        }
 }

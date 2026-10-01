@@ -10,6 +10,31 @@ public abstract interface class com/eventslooped/klokka/JobContext {
 	public abstract fun progress (DLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class com/eventslooped/klokka/JobError {
+	public static final field Companion Lcom/eventslooped/klokka/JobError$Companion;
+	public static final field MAX_STACK_TRACE_CHARS I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5 ()Lkotlin/time/Instant;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;)Lcom/eventslooped/klokka/JobError;
+	public static synthetic fun copy$default (Lcom/eventslooped/klokka/JobError;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/JobError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAt ()Lkotlin/time/Instant;
+	public final fun getAttempt ()I
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getStackTrace ()Ljava/lang/String;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/eventslooped/klokka/JobError$Companion {
+	public final fun of (Ljava/lang/Throwable;ILkotlin/time/Instant;)Lcom/eventslooped/klokka/JobError;
+}
+
 public abstract interface class com/eventslooped/klokka/JobEvent {
 	public abstract fun getAt ()Lkotlin/time/Instant;
 	public abstract fun getKind ()Ljava/lang/String;
@@ -570,7 +595,7 @@ public final class com/eventslooped/klokka/spi/ClaimedJob {
 }
 
 public final class com/eventslooped/klokka/spi/JobDetails {
-	public synthetic fun <init> (Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;Lcom/eventslooped/klokka/JobError;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/eventslooped/klokka/spi/JobSummary;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()I
@@ -578,11 +603,13 @@ public final class com/eventslooped/klokka/spi/JobDetails {
 	public final fun component5 ()J
 	public final fun component6 ()Lkotlin/time/Instant;
 	public final fun component7-ExZ2lsE ()Ljava/lang/String;
-	public final fun copy-4oyjjKs (Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;)Lcom/eventslooped/klokka/spi/JobDetails;
-	public static synthetic fun copy-4oyjjKs$default (Lcom/eventslooped/klokka/spi/JobDetails;Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;ILjava/lang/Object;)Lcom/eventslooped/klokka/spi/JobDetails;
+	public final fun component8 ()Lcom/eventslooped/klokka/JobError;
+	public final fun copy-L1TGsyw (Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;Lcom/eventslooped/klokka/JobError;)Lcom/eventslooped/klokka/spi/JobDetails;
+	public static synthetic fun copy-L1TGsyw$default (Lcom/eventslooped/klokka/spi/JobDetails;Lcom/eventslooped/klokka/spi/JobSummary;Ljava/lang/String;ILjava/lang/String;JLkotlin/time/Instant;Ljava/lang/String;Lcom/eventslooped/klokka/JobError;ILjava/lang/Object;)Lcom/eventslooped/klokka/spi/JobDetails;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFence ()J
 	public final fun getHolder-ExZ2lsE ()Ljava/lang/String;
+	public final fun getLastError ()Lcom/eventslooped/klokka/JobError;
 	public final fun getLeaseUntil ()Lkotlin/time/Instant;
 	public final fun getPayload ()Ljava/lang/String;
 	public final fun getPayloadVersion ()I
@@ -619,13 +646,13 @@ public abstract interface class com/eventslooped/klokka/spi/JobStore {
 	public abstract fun enqueue (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun heartbeat-Yj_zwhA (Ljava/util/List;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun sweep (Lcom/eventslooped/klokka/RetentionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public abstract fun transition-F7Mbr6Q (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun transition-F7Mbr6Q$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun transition-tdPF9Ks (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lcom/eventslooped/klokka/JobError;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun transition-tdPF9Ks$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lcom/eventslooped/klokka/JobError;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun upsertSchedules (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class com/eventslooped/klokka/spi/JobStore$DefaultImpls {
-	public static synthetic fun transition-F7Mbr6Q$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun transition-tdPF9Ks$default (Lcom/eventslooped/klokka/spi/JobStore;Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lcom/eventslooped/klokka/JobError;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class com/eventslooped/klokka/spi/JobSummary {
@@ -765,7 +792,7 @@ public final class com/eventslooped/klokka/store/InMemoryJobStore : com/eventslo
 	public final fun scheduleSnapshot (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun snapshot-EYbf1d4 (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun sweep (Lcom/eventslooped/klokka/RetentionPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun transition-F7Mbr6Q (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun transition-tdPF9Ks (Ljava/lang/String;Lcom/eventslooped/klokka/JobState;Lcom/eventslooped/klokka/JobState;Ljava/lang/Long;Lcom/eventslooped/klokka/JobError;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun upsertSchedules (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun wakeups ()Lkotlinx/coroutines/flow/Flow;
 }

@@ -343,4 +343,86 @@ public class InMemoryJobStoreTest {
                 )
             assertTrue(thirdClaim.isEmpty())
         }
+
+    private fun jobError(attempt: Int, message: String = "boom") =
+        JobError(type = "test.Boom", message = message, stackTrace = "trace-$attempt", attempt = attempt, at = EPOCH)
+
+    @Test
+    public fun transitionWithErrorPersistsItAndGetJobReturnsIt() =
+        runTest {
+            val store = InMemoryJobStore(TestClock(EPOCH))
+            val id = store.enqueue(listOf(newJob(runAt = EPOCH))).single()
+            val claim = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val error = jobError(attempt = 1)
+
+            assertTrue(store.transition(id, JobState.Running, JobState.DeadLettered, fence = claim.fence, error = error))
+
+            assertEquals(error, store.getJob(id)?.lastError)
+        }
+
+    @Test
+    public fun neverFailedJobHasNoLastError() =
+        runTest {
+            val store = InMemoryJobStore(TestClock(EPOCH))
+            val id = store.enqueue(listOf(newJob(runAt = EPOCH))).single()
+            assertNull(store.getJob(id)?.lastError)
+
+            val claim = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            assertTrue(store.transition(id, JobState.Running, JobState.Succeeded, fence = claim.fence))
+
+            assertNull(store.getJob(id)?.lastError)
+        }
+
+    @Test
+    public fun secondErrorReplacesTheFirst() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val id = store.enqueue(listOf(newJob(runAt = EPOCH))).single()
+            val first = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            assertTrue(
+                store.transition(id, JobState.Running, JobState.Failed(clock.now()), fence = first.fence, error = jobError(1, "first")),
+            )
+            val second = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val secondError = jobError(2, "second")
+
+            assertTrue(store.transition(id, JobState.Running, JobState.DeadLettered, fence = second.fence, error = secondError))
+
+            assertEquals(secondError, store.getJob(id)?.lastError)
+        }
+
+    @Test
+    public fun transitionsWithoutErrorLeaveTheStoredErrorUntouched() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val id = store.enqueue(listOf(newJob(runAt = EPOCH))).single()
+            val first = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val error = jobError(1)
+            assertTrue(store.transition(id, JobState.Running, JobState.DeadLettered, fence = first.fence, error = error))
+
+            assertTrue(store.transition(id, JobState.DeadLettered, JobState.Enqueued))
+            assertEquals(error, store.getJob(id)?.lastError)
+
+            val second = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            assertTrue(store.transition(id, JobState.Running, JobState.Succeeded, fence = second.fence))
+
+            assertEquals(JobState.Succeeded, store.snapshot(id)?.state)
+            assertEquals(error, store.getJob(id)?.lastError)
+        }
+
+    @Test
+    public fun rejectedTransitionDoesNotWriteTheError() =
+        runTest {
+            val store = InMemoryJobStore(TestClock(EPOCH))
+            val id = store.enqueue(listOf(newJob(runAt = EPOCH))).single()
+            val claim = store.claim(listOf(QueueName.DEFAULT), ALL_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val error = jobError(1)
+
+            assertFalse(store.transition(id, JobState.Running, JobState.DeadLettered, fence = claim.fence + 1, error = error))
+            assertFalse(store.transition(id, JobState.Scheduled, JobState.DeadLettered, fence = claim.fence, error = error))
+
+            assertEquals(JobState.Running, store.snapshot(id)?.state)
+            assertNull(store.getJob(id)?.lastError)
+        }
 }

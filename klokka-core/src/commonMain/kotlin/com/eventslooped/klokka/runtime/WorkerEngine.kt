@@ -3,6 +3,7 @@
 package com.eventslooped.klokka.runtime
 
 import com.eventslooped.klokka.JobContext
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobEvent
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobRegistry
@@ -348,8 +349,10 @@ internal class WorkerEngine(
             deadLetter(job, error)
             return
         }
-        val retryAt = settings.clock.now() + delay
-        if (store.transition(job.id, JobState.Running, JobState.Failed(retryAt), job.fence)) {
+        val now = settings.clock.now()
+        val retryAt = now + delay
+        val record = JobError.of(error, job.attempt, now)
+        if (store.transition(job.id, JobState.Running, JobState.Failed(retryAt), job.fence, record)) {
             emit(
                 JobEvent.FailedAttempt(
                     jobId = job.id,
@@ -366,7 +369,8 @@ internal class WorkerEngine(
     }
 
     private suspend fun deadLetter(job: ClaimedJob, error: Throwable) {
-        if (store.transition(job.id, JobState.Running, JobState.DeadLettered, job.fence)) {
+        val record = JobError.of(error, job.attempt, settings.clock.now())
+        if (store.transition(job.id, JobState.Running, JobState.DeadLettered, job.fence, record)) {
             emit(
                 JobEvent.DeadLettered(
                     jobId = job.id,

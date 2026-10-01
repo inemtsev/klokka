@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.dashboard
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
 import com.eventslooped.klokka.QueueName
@@ -29,10 +30,13 @@ private val WORKER = WorkerId("dashboard-test")
 private fun newJob(kind: String = "orders.confirm", payload: String = """{"orderId":42}""") =
     NewJob(kind = kind, payload = payload, runAt = Clock.System.now() - 1.minutes)
 
-private suspend fun InMemoryJobStore.deadLettered(kind: String = "orders.confirm"): JobId {
+private suspend fun InMemoryJobStore.deadLettered(
+    kind: String = "orders.confirm",
+    error: JobError? = null,
+): JobId {
     val id = enqueue(listOf(newJob(kind))).single()
     val claim = claim(listOf(QueueName.DEFAULT), setOf(kind), 1, 5.minutes, WORKER).single()
-    transition(id, JobState.Running, JobState.DeadLettered, claim.fence)
+    transition(id, JobState.Running, JobState.DeadLettered, claim.fence, error)
     return id
 }
 
@@ -96,6 +100,35 @@ internal class KlokkaDashboardTest {
             assertTrue("visible-to-operators" in detail.bodyAsText())
 
             assertEquals(HttpStatusCode.NotFound, client.get("/klokka/jobs/job-999").status)
+        }
+
+    @Test
+    fun detailShowsTheLastErrorWhenOneWasRecorded() =
+        testApplication {
+            val store = InMemoryJobStore()
+            val error = JobError.of(RuntimeException("boom"), attempt = 1, at = Clock.System.now())
+            val id = store.deadLettered(error = error)
+            application {
+                routing { klokkaDashboard(store) { allowAnonymous = true } }
+            }
+
+            val body = client.get("/klokka/jobs/${id.value}").bodyAsText()
+            assertTrue("Last error (attempt 1)" in body)
+            assertTrue("java.lang.RuntimeException" in body)
+            assertTrue("boom" in body)
+            assertTrue("detailShowsTheLastErrorWhenOneWasRecorded" in body)
+        }
+
+    @Test
+    fun detailOmitsTheLastErrorSectionWhenNoneWasRecorded() =
+        testApplication {
+            val store = InMemoryJobStore()
+            val id = store.deadLettered()
+            application {
+                routing { klokkaDashboard(store) { allowAnonymous = true } }
+            }
+
+            assertFalse("Last error" in client.get("/klokka/jobs/${id.value}").bodyAsText())
         }
 
     @Test

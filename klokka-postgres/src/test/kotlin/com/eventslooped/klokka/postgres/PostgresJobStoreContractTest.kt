@@ -2,6 +2,7 @@
 
 package com.eventslooped.klokka.postgres
 
+import com.eventslooped.klokka.JobError
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobState
 import com.eventslooped.klokka.QueueName
@@ -184,6 +185,72 @@ public class PostgresJobStoreContractTest {
             assertNull(row.leaseUntil)
             assertNull(row.holder)
         }
+
+    @Test
+    public fun transitionToFailedWithAnErrorPersistsItAndGetJobReturnsIt() =
+        runTest {
+            val store = PostgresTestSupport.freshStore()
+            val id = store.enqueue(listOf(PostgresTestSupport.newJob())).single()
+            val claim =
+                store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val error = sampleError(attempt = claim.attempt)
+
+            val retryAt = PostgresTestSupport.dbNow() - 1.minutes
+            assertTrue(store.transition(id, JobState.Running, JobState.Failed(retryAt), fence = claim.fence, error = error))
+
+            assertEquals(error, assertNotNull(store.getJob(id)).lastError)
+        }
+
+    @Test
+    public fun transitionToDeadLetteredReplacesThePreviousError() =
+        runTest {
+            val store = PostgresTestSupport.freshStore()
+            val id = store.enqueue(listOf(PostgresTestSupport.newJob())).single()
+            val first =
+                store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val retryAt = PostgresTestSupport.dbNow() - 1.minutes
+            assertTrue(store.transition(id, JobState.Running, JobState.Failed(retryAt), fence = first.fence, error = sampleError(1)))
+            val second =
+                store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val replacement = sampleError(attempt = 2).copy(type = "other.Failure", message = null)
+
+            assertTrue(
+                store.transition(id, JobState.Running, JobState.DeadLettered, fence = second.fence, error = replacement),
+            )
+
+            val stored = assertNotNull(assertNotNull(store.getJob(id)).lastError)
+            assertEquals(replacement, stored)
+            assertEquals(2, stored.attempt)
+            assertNull(stored.message)
+        }
+
+    @Test
+    public fun transitionsWithoutAnErrorLeaveTheStoredErrorUntouched() =
+        runTest {
+            val store = PostgresTestSupport.freshStore()
+            val id = store.enqueue(listOf(PostgresTestSupport.newJob())).single()
+            val claim =
+                store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            val error = sampleError(attempt = claim.attempt)
+            assertTrue(store.transition(id, JobState.Running, JobState.DeadLettered, fence = claim.fence, error = error))
+
+            assertTrue(store.transition(id, JobState.DeadLettered, JobState.Enqueued))
+            assertEquals(error, assertNotNull(store.getJob(id)).lastError, "requeue must keep the last error")
+
+            val again =
+                store.claim(listOf(QueueName.DEFAULT), DEFAULT_KINDS, limit = 10, lease = 1.minutes, worker = WORKER_A).single()
+            assertTrue(store.transition(id, JobState.Running, JobState.Succeeded, fence = again.fence))
+            assertEquals(error, assertNotNull(store.getJob(id)).lastError, "success must keep the last error")
+        }
+
+    private fun sampleError(attempt: Int): JobError =
+        JobError(
+            type = "java.lang.IllegalStateException",
+            message = "boom",
+            stackTrace = "java.lang.IllegalStateException: boom\n\tat Foo.bar(Foo.kt:1)",
+            attempt = attempt,
+            at = PostgresTestSupport.dbNow(),
+        )
 
     @Test
     public fun transitionWithWrongFenceFailsAndChangesNothing() =

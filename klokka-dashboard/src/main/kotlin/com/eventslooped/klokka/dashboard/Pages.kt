@@ -177,6 +177,20 @@ internal fun HTML.detailPage(details: JobDetails, readOnly: Boolean) {
                 dd { +it }
             }
         }
+        details.lastError?.let { error ->
+            h2 { +"Last error (attempt ${error.attempt})" }
+            dl {
+                dt { +"type" }
+                dd { +error.type }
+                error.message?.let {
+                    dt { +"message" }
+                    dd { +it }
+                }
+                dt { +"at" }
+                dd { +error.at.toString() }
+            }
+            pre { +error.stackTrace }
+        }
         h2 { +"Payload (v${details.payloadVersion})" }
         pre { +details.payload }
         if (job.status == JobStatus.DeadLettered && !readOnly) {
