@@ -11,6 +11,11 @@ import kotlin.time.Instant
  *
  * Klokka is at-least-once: a claimed job whose worker dies will run again. Use [attempt],
  * [scheduledFor], and your own idempotency keys to make re-execution safe.
+ *
+ * On the JVM every log line written while a handler runs carries the MDC entries
+ * `klokka.jobId`, `klokka.kind`, `klokka.queue`, `klokka.attempt` and, for schedule-emitted
+ * runs, `klokka.scheduleId`. They are propagated across suspension points, so handlers use
+ * their own logger and need no Klokka-specific one.
  */
 public interface JobContext {
     public val jobId: JobId

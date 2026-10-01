@@ -11,6 +11,8 @@ import com.eventslooped.klokka.JobTimeoutException
 import com.eventslooped.klokka.NonRetryable
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.WorkerId
+import com.eventslooped.klokka.logging.klokkaLogger
+import com.eventslooped.klokka.logging.withJobLoggingContext
 import com.eventslooped.klokka.spi.ClaimedJob
 import com.eventslooped.klokka.spi.JobStore
 import com.eventslooped.klokka.spi.PushCapableStore
@@ -67,6 +69,8 @@ internal class WorkerEngine(
     private val scope: CoroutineScope,
     private val emit: (JobEvent) -> Unit,
 ) {
+    private val log = klokkaLogger("com.eventslooped.klokka.runtime.WorkerEngine")
+
     private val queueExecutors: List<QueueExecutor> = settings.queues.map { QueueExecutor(it, scope) }
 
     /** Coalesced "a claim round may be worth running" signal. Multiple producers, one consumer. */
@@ -79,11 +83,11 @@ internal class WorkerEngine(
 
     /** Launches the claim loop, heartbeater, sweeper and scheduler, each under its own restart supervisor. */
     fun start() {
-        scope.launchSupervised { runClaimLoop() }
-        scope.launchSupervised { runHeartbeater() }
-        scope.launchSupervised { runSweeper() }
+        scope.launchSupervised("claim loop") { runClaimLoop() }
+        scope.launchSupervised("heartbeater") { runHeartbeater() }
+        scope.launchSupervised("sweeper") { runSweeper() }
         if (!recurring.isEmpty()) {
-            scope.launchSupervised { runScheduler() }
+            scope.launchSupervised("scheduler") { runScheduler() }
         }
     }
 
@@ -237,12 +241,12 @@ internal class WorkerEngine(
             if (registration == null) {
                 // Unreachable with a conforming store: claim() is filtered by registry.kinds().
                 // Dead-letter loudly rather than requeue, which could loop forever.
-                deadLetter(
-                    job,
+                val violation =
                     IllegalStateException(
                         "store returned kind '${job.kind}', which this worker does not bind (JobStore.claim contract violation)",
-                    ),
-                )
+                    )
+                log.error(violation) { violation.message.orEmpty() }
+                deadLetter(job, violation)
                 return
             }
 
@@ -266,44 +270,55 @@ internal class WorkerEngine(
             // stalled; a stalled worker's late writes are then rejected by the fence. Handler
             // duration is bounded only by the explicit per-kind timeout, when one is set.
             val timeout = registration.timeout ?: settings.defaultTimeout
-            try {
-                if (timeout == null) {
-                    registration.execute(context, settings.codec, job.payload)
-                    onSuccess(job, startedAt, late)
-                } else {
-                    // withTimeoutOrNull swallows only ITS OWN deadline; a withTimeout the handler
-                    // opened itself still propagates as a TimeoutCancellationException below.
-                    val finished =
-                        withTimeoutOrNull(timeout) {
-                            registration.execute(context, settings.codec, job.payload)
-                            true
-                        }
-                    if (finished == null) {
-                        fail(job, registration, JobTimeoutException(job.kind, timeout))
-                    } else {
+            withJobLoggingContext(loggingFields(job)) {
+                try {
+                    if (timeout == null) {
+                        registration.execute(context, settings.codec, job.payload)
                         onSuccess(job, startedAt, late)
+                    } else {
+                        // withTimeoutOrNull swallows only ITS OWN deadline; a withTimeout the handler
+                        // opened itself still propagates as a TimeoutCancellationException below.
+                        val finished =
+                            withTimeoutOrNull(timeout) {
+                                registration.execute(context, settings.codec, job.payload)
+                                true
+                            }
+                        if (finished == null) {
+                            fail(job, registration, JobTimeoutException(job.kind, timeout))
+                        } else {
+                            onSuccess(job, startedAt, late)
+                        }
                     }
-                }
-            } catch (e: CancellationException) {
-                if (e is TimeoutCancellationException) {
-                    // A withTimeout the handler opened and let escape: a handler failure.
+                } catch (e: CancellationException) {
+                    if (e is TimeoutCancellationException) {
+                        // A withTimeout the handler opened and let escape: a handler failure.
+                        fail(job, registration, e)
+                    } else {
+                        // The scope is being cancelled (drain/shutdown).
+                        // Requeue must go through even though this coroutine is cancelled.
+                        withContext(NonCancellable) {
+                            store.transition(job.id, JobState.Running, JobState.Enqueued, job.fence)
+                        }
+                        throw e
+                    }
+                } catch (e: Throwable) {
                     fail(job, registration, e)
-                } else {
-                    // The scope is being cancelled (drain/shutdown).
-                    // Requeue must go through even though this coroutine is cancelled.
-                    withContext(NonCancellable) {
-                        store.transition(job.id, JobState.Running, JobState.Enqueued, job.fence)
-                    }
-                    throw e
                 }
-            } catch (e: Throwable) {
-                fail(job, registration, e)
             }
         } finally {
             inFlightMutex.withLock { inFlightIds.remove(job.id) }
             nudgeClaimLoop()
         }
     }
+
+    private fun loggingFields(job: ClaimedJob): Map<String, String> =
+        buildMap {
+            put("klokka.jobId", job.id.value)
+            put("klokka.kind", job.kind)
+            put("klokka.queue", job.queue.value)
+            put("klokka.attempt", job.attempt.toString())
+            job.scheduleId?.let { put("klokka.scheduleId", it) }
+        }
 
     private suspend fun onSuccess(job: ClaimedJob, startedAt: Instant, late: Boolean) {
         val runDuration = (settings.clock.now() - startedAt).coerceAtLeast(Duration.ZERO)
@@ -346,6 +361,7 @@ internal class WorkerEngine(
                     scheduleId = job.scheduleId,
                 ),
             )
+            log.warn(error) { "job ${job.id.value} (kind ${job.kind}, attempt ${job.attempt}) failed, retry at $retryAt" }
         }
     }
 
@@ -361,6 +377,7 @@ internal class WorkerEngine(
                     scheduleId = job.scheduleId,
                 ),
             )
+            log.error(error) { "job ${job.id.value} (kind ${job.kind}) dead-lettered after ${job.attempt} attempt(s)" }
         }
     }
 
@@ -369,7 +386,7 @@ internal class WorkerEngine(
      * exponential backoff (100ms doubling to a 10s cap). Backoff resets to the initial value once
      * a run has stayed up for [RESTART_CLEAN_RUN_THRESHOLD].
      */
-    private fun CoroutineScope.launchSupervised(block: suspend () -> Unit): Job =
+    private fun CoroutineScope.launchSupervised(name: String, block: suspend () -> Unit): Job =
         launch {
             var backoff = RESTART_INITIAL_BACKOFF
             while (true) {
@@ -378,6 +395,7 @@ internal class WorkerEngine(
                     block()
                     // Supervised loops are infinite; a normal return is unexpected.
                     // Pace the relaunch so a future non-infinite block cannot hot-spin.
+                    log.warn { "$name returned unexpectedly, relaunching in $backoff" }
                     delay(backoff)
                 } catch (e: CancellationException) {
                     throw e
@@ -385,6 +403,7 @@ internal class WorkerEngine(
                     if (startedAt.elapsedNow() >= RESTART_CLEAN_RUN_THRESHOLD) {
                         backoff = RESTART_INITIAL_BACKOFF
                     }
+                    log.warn(e) { "$name crashed, restarting in $backoff" }
                     delay(backoff)
                     backoff = (backoff * 2).coerceAtMost(RESTART_MAX_BACKOFF)
                 }

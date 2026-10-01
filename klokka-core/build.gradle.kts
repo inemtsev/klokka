@@ -39,6 +39,7 @@ kotlin {
 
         jvmMain.dependencies {
             implementation(libs.slf4j.api)
+            implementation(libs.kotlinx.coroutines.slf4j)
         }
     }
 }
