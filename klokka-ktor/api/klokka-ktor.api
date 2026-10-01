@@ -4,6 +4,7 @@ public final class com/eventslooped/klokka/ktor/KlokkaConfig {
 	public final fun getClock ()Lkotlin/time/Clock;
 	public final fun getCodec ()Lcom/eventslooped/klokka/PayloadCodec;
 	public final fun getDefaultRetry ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getDefaultTimeout-FghU774 ()Lkotlin/time/Duration;
 	public final fun getDrainTimeout-UwyO8pc ()J
 	public final fun getHeartbeatInterval-UwyO8pc ()J
 	public final fun getLateThreshold-UwyO8pc ()J
@@ -14,10 +15,10 @@ public final class com/eventslooped/klokka/ktor/KlokkaConfig {
 	public final fun getStore ()Lcom/eventslooped/klokka/spi/JobStore;
 	public final fun getSweepInterval-UwyO8pc ()J
 	public final fun getWorkerId-pcsyqdI ()Ljava/lang/String;
-	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;)V
-	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;)V
-	public static synthetic fun handle$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;ILjava/lang/Object;)V
-	public static synthetic fun handle$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public final fun handle-5_5nbZA (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lkotlin/jvm/functions/Function3;)V
+	public static synthetic fun handle-5_5nbZA$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public final fun handle-Q2Q30fc (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;)V
+	public static synthetic fun handle-Q2Q30fc$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;ILjava/lang/Object;)V
 	public final fun queue (Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;)V
 	public static synthetic fun queue$default (Lcom/eventslooped/klokka/ktor/KlokkaConfig;Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;ILjava/lang/Object;)V
 	public final fun queue-X7_D_ro (Ljava/lang/String;ILkotlinx/coroutines/CoroutineDispatcher;)V
@@ -30,6 +31,7 @@ public final class com/eventslooped/klokka/ktor/KlokkaConfig {
 	public final fun setClock (Lkotlin/time/Clock;)V
 	public final fun setCodec (Lcom/eventslooped/klokka/PayloadCodec;)V
 	public final fun setDefaultRetry (Lcom/eventslooped/klokka/RetryPolicy;)V
+	public final fun setDefaultTimeout-BwNAW2A (Lkotlin/time/Duration;)V
 	public final fun setDrainTimeout-LRDsOJo (J)V
 	public final fun setHeartbeatInterval-LRDsOJo (J)V
 	public final fun setLateThreshold-LRDsOJo (J)V

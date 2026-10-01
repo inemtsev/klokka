@@ -5,6 +5,7 @@ package com.eventslooped.klokka.runtime
 import com.eventslooped.klokka.JobEvent
 import com.eventslooped.klokka.JobRegistry
 import com.eventslooped.klokka.JobState
+import com.eventslooped.klokka.JobTimeoutException
 import com.eventslooped.klokka.NonRetryable
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetryPolicy
@@ -16,16 +17,20 @@ import com.eventslooped.klokka.spi.NewJob
 import com.eventslooped.klokka.store.InMemoryJobStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
@@ -50,15 +55,18 @@ private fun testSettings(
     queues: List<QueueConfig> = listOf(QueueConfig(QueueName.DEFAULT)),
     role: KlokkaRole = KlokkaRole.Both,
     defaultRetry: RetryPolicy = RetryPolicy.None,
+    defaultTimeout: Duration? = null,
     drainTimeout: Duration = 5.seconds,
+    heartbeatInterval: Duration = 5.seconds,
 ): KlokkaSettings =
     KlokkaSettings(
         queues = queues,
         role = role,
         defaultRetry = defaultRetry,
+        defaultTimeout = defaultTimeout,
         clock = clock,
         lease = 1.minutes,
-        heartbeatInterval = 5.seconds,
+        heartbeatInterval = heartbeatInterval,
         pollInterval = 20.milliseconds,
         claimBatch = 16,
         sweepInterval = 1.hours,
@@ -74,6 +82,20 @@ private fun TestScope.collectEvents(runtime: KlokkaRuntime): MutableList<JobEven
         runtime.events.collect { events.add(it) }
     }
     return events
+}
+
+/**
+ * Advances virtual time and the store clock together in [step]s until [total] has passed, so
+ * heartbeats, poll ticks and lease expiry all see time moving at the same rate.
+ */
+private suspend fun TestScope.advanceLockstep(clock: TestClock, total: Duration, step: Duration) {
+    var elapsed = Duration.ZERO
+    while (elapsed < total) {
+        advanceTimeBy(step)
+        clock.advanceBy(step)
+        runCurrent()
+        elapsed += step
+    }
 }
 
 /** Flushes whatever is immediately runnable, then lets one poll tick fire and flushes again. */
@@ -457,5 +479,160 @@ public class KlokkaRuntimeTest {
             val enqueued = events.filterIsInstance<JobEvent.Enqueued>().singleOrNull()
             assertNotNull(enqueued, "expected a single Enqueued event, got: $events")
             assertEquals(at, enqueued.scheduledFor)
+        }
+
+    @Test
+    public fun handlerOutlivingTheLeaseCompletesBecauseHeartbeatsRenewIt() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            // Three times the 1-minute lease, no per-kind timeout.
+            registry.handle(TYPE) { _ -> delay(3.minutes) }
+            val cfg = testSettings(clock)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+            val events = collectEvents(runtime)
+
+            runtime.start(backgroundScope)
+            val id = runtime.enqueue(TYPE, Payload())
+            settle(cfg.pollInterval)
+            assertTrue(events.any { it is JobEvent.Started })
+
+            // Had the lease lapsed, the claim loop (polling every 20ms) would have revived
+            // the job as attempt 2 and the original completion would be fenced out.
+            advanceLockstep(clock, total = 3.minutes + 10.seconds, step = cfg.heartbeatInterval)
+
+            val succeeded = events.filterIsInstance<JobEvent.Succeeded>().singleOrNull()
+            assertNotNull(succeeded, "expected a single Succeeded event, got: $events")
+            assertEquals(1, succeeded.attempt)
+            assertFalse(events.any { it is JobEvent.FailedAttempt }, "no attempt may fail: $events")
+            val snapshot = store.snapshot(id)
+            assertEquals(JobState.Succeeded, snapshot?.state)
+            assertEquals(1, snapshot?.attempts)
+
+            runtime.drain()
+        }
+
+    @Test
+    public fun perKindTimeoutCancelsTheHandlerAndFailsWithJobTimeoutException() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            var cancelled = false
+            registry.handle(TYPE, timeout = 10.seconds) { _ ->
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            }
+            val cfg = testSettings(clock)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+            val events = collectEvents(runtime)
+
+            runtime.start(backgroundScope)
+            val id = runtime.enqueue(TYPE, Payload())
+            settle(cfg.pollInterval)
+            assertTrue(events.any { it is JobEvent.Started })
+
+            advanceTimeBy(10.seconds)
+            runCurrent()
+
+            assertTrue(cancelled, "the handler must be cancelled cooperatively")
+            val dead = events.filterIsInstance<JobEvent.DeadLettered>().singleOrNull()
+            assertNotNull(dead, "expected a single DeadLettered event, got: $events")
+            val error = assertIs<JobTimeoutException>(dead.error)
+            assertEquals(TYPE.kind, error.kind)
+            assertEquals(10.seconds, error.timeout)
+            assertEquals(JobState.DeadLettered, store.snapshot(id)?.state)
+
+            runtime.drain()
+        }
+
+    @Test
+    public fun defaultTimeoutAppliesWhenTheKindSetsNoneAndGoesThroughRetry() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            registry.handle(TYPE, retry = RetryPolicy.intervals(listOf(1.minutes))) { _ -> awaitCancellation() }
+            val cfg = testSettings(clock, defaultTimeout = 2.seconds)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+            val events = collectEvents(runtime)
+
+            runtime.start(backgroundScope)
+            val id = runtime.enqueue(TYPE, Payload())
+            settle(cfg.pollInterval)
+
+            advanceTimeBy(2.seconds)
+            runCurrent()
+
+            val failed = events.filterIsInstance<JobEvent.FailedAttempt>().singleOrNull()
+            assertNotNull(failed, "expected a single FailedAttempt event, got: $events")
+            assertIs<JobTimeoutException>(failed.error)
+            assertEquals(JobState.Failed(EPOCH + 1.minutes), store.snapshot(id)?.state)
+
+            runtime.drain()
+        }
+
+    @Test
+    public fun handlerOwnEscapedWithTimeoutIsAnOrdinaryFailureNotAJobTimeout() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            registry.handle(TYPE) { _ -> withTimeout(1.seconds) { awaitCancellation() } }
+            val cfg = testSettings(clock)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+            val events = collectEvents(runtime)
+
+            runtime.start(backgroundScope)
+            val id = runtime.enqueue(TYPE, Payload())
+            settle(cfg.pollInterval)
+
+            advanceTimeBy(1.seconds)
+            runCurrent()
+
+            val dead = events.filterIsInstance<JobEvent.DeadLettered>().singleOrNull()
+            assertNotNull(dead, "expected a single DeadLettered event, got: $events")
+            assertIs<TimeoutCancellationException>(dead.error)
+            assertEquals(JobState.DeadLettered, store.snapshot(id)?.state)
+
+            runtime.drain()
+        }
+
+    @Test
+    public fun extendLeaseRenewsFromNowAndCarriesTheAttemptPastTheLease() =
+        runTest {
+            val clock = TestClock(EPOCH)
+            val store = InMemoryJobStore(clock)
+            val registry = JobRegistry()
+            val extended = CompletableDeferred<Unit>()
+            registry.handle(TYPE) { _ ->
+                extendLease(by = 10.minutes)
+                extended.complete(Unit)
+                delay(5.minutes)
+            }
+            // Heartbeats far apart, so only the explicit extension keeps the lease alive.
+            val cfg = testSettings(clock, heartbeatInterval = 1.hours)
+            val runtime = KlokkaRuntime(store, registry, cfg)
+            val events = collectEvents(runtime)
+
+            runtime.start(backgroundScope)
+            val id = runtime.enqueue(TYPE, Payload())
+            settle(cfg.pollInterval)
+            assertTrue(extended.isCompleted, "the handler must have run up to extendLease")
+            assertEquals(EPOCH + 10.minutes, store.snapshot(id)?.leaseUntil)
+
+            // Five minutes is past the 1-minute lease; the claim loop would revive a lapsed one.
+            advanceLockstep(clock, total = 5.minutes + 10.seconds, step = 10.seconds)
+
+            val succeeded = events.filterIsInstance<JobEvent.Succeeded>().singleOrNull()
+            assertNotNull(succeeded, "expected a single Succeeded event, got: $events")
+            assertEquals(1, succeeded.attempt)
+            assertEquals(1, store.snapshot(id)?.attempts)
+
+            runtime.drain()
         }
 }

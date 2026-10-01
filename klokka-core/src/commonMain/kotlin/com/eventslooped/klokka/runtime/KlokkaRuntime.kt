@@ -62,6 +62,12 @@ public class KlokkaSettings(
     public val queues: List<QueueConfig> = listOf(QueueConfig(QueueName.DEFAULT)),
     public val role: KlokkaRole = KlokkaRole.Both,
     public val defaultRetry: RetryPolicy = RetryPolicy.exponential(),
+    /**
+     * Per-attempt timeout for kinds whose registration sets none. Null, the default, means
+     * no cap: a handler runs until it returns and its lease is renewed by heartbeat the
+     * whole time. See `JobRegistry.handle`.
+     */
+    public val defaultTimeout: Duration? = null,
     public val codec: PayloadCodec = JsonPayloadCodec(),
     public val clock: Clock = Clock.System,
     public val lease: Duration = 5.minutes,
@@ -78,6 +84,7 @@ public class KlokkaSettings(
     init {
         require(queues.isNotEmpty()) { "configure at least one queue" }
         require(queues.map { it.name }.toSet().size == queues.size) { "duplicate queue names" }
+        require(defaultTimeout == null || defaultTimeout.isPositive()) { "defaultTimeout must be positive, got $defaultTimeout" }
     }
 }
 

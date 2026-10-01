@@ -172,6 +172,7 @@ Modeled as a sealed hierarchy. Completion records whether the run was on time or
 ### Claiming and liveness
 
 - Workers claim due rows with `SELECT ... FOR UPDATE SKIP LOCKED` and hold a **lease**, extended by heartbeat while the job runs.
+- The lease only tells other workers that this one is alive. A handler on a live worker runs until it returns, with the lease renewed every heartbeat interval; only a dead or stalled worker lets its lease lapse, and its late writes are then rejected by the fence. Bounding how long a live handler may run is a separate, explicit per-kind `timeout` (with a runtime default, both null by default); on expiry the attempt is cancelled cooperatively and fails with `JobTimeoutException`, which the retry policy sees like any other error.
 - Workers claim only kinds they bind. A job whose kind no live worker binds waits in Enqueued; it is never dead-lettered by a worker that cannot run it, which is what keeps a rolling deploy from dead-lettering a kind only the newer version knows.
 - All timestamp comparisons use **database time**. Node clocks are never trusted; both ShedLock and Quartz document clock skew as a production landmine.
 - Every claim carries a monotonically increasing **fencing version**, so a zombie worker resurrected after a pause cannot overwrite newer state.
@@ -239,7 +240,7 @@ interface TransactionalStore<TX> : JobStore {
 }
 ```
 
-Execution wraps in an interceptor pipeline with stable, documented ordering: metrics, tracing, MDC, user interceptors, then the handler, inside `withTimeout(lease)`.
+Execution wraps in an interceptor pipeline with stable, documented ordering: metrics, tracing, MDC, user interceptors, then the handler, inside the per-kind `timeout` when one is configured (never inside the lease; see section 5, claiming and liveness).
 
 ### Modules
 
@@ -338,6 +339,7 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Query surface is a capability | `QueryableStore` (countsByStatus, listJobs, getJob) sits beside PushCapable/Transactional, OUT of `JobStore`: the binding contract stays the minimum to run jobs safely; observation is additive, and a store without it loses the dashboard, not its validity. Reads are snapshots with no cross-call consistency; listings order most-recently-persisted first; malformed ids read as null, never as errors | 2026-09-13 |
 | Requeue semantics | The dashboard's requeue is the plain CAS `DeadLettered -> Enqueued`: no new SPI, and the retry budget RESUMES where it left off (attempt is an honest execution count, never reset), so a still-broken job returns to the dead-letter set after one more failure. Refinement found by the query tests: any transition to a non-terminal state clears the terminal timestamp | 2026-09-13 |
 | Dashboard fail-closed mount | `Route.klokkaDashboard(store)` walks its parent chain at mount time; no enclosing `authenticate { }` and no explicit `allowAnonymous = true` means the application refuses to boot. Delivered as resolved question 3 specified | 2026-09-13 |
+| Lease is liveness only | The worker no longer wraps the handler in `withTimeout(lease)`: the heartbeater already renews the lease while an attempt is in flight, so that local deadline cancelled healthy handlers at the initial lease boundary and made `JobContext.extendLease` ineffective (found by the #16 suite). Handler duration is bounded only by an explicit per-kind `timeout` at `handle(...)`, falling back to `defaultTimeout`, both null (unbounded) by default; expiry fails the attempt with `JobTimeoutException` through the normal retry path. A dead worker's job is revived by lease expiry and its stale writes rejected by the fence; a hung handler on a live worker is what the timeout is for. Resolves the open half of #12 | 2026-10-01 |
 | Wake-up NOTIFY lives in the schema | Push wake-ups come from AFTER INSERT/UPDATE triggers calling `pg_notify`, not from application code, so every write path that makes a job claimable notifies: Klokka's enqueue, the future transactional enqueue on the application's own connection, dashboard or psql requeues. Commit-time delivery makes "notify iff the job exists" automatic. The listener is one dedicated session-mode connection; a dead listener degrades to poll latency, never to lost jobs | 2026-09-13 |
 
 ## 13. Alternatives considered

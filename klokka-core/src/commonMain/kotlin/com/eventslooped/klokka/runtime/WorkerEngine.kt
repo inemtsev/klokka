@@ -7,6 +7,7 @@ import com.eventslooped.klokka.JobEvent
 import com.eventslooped.klokka.JobId
 import com.eventslooped.klokka.JobRegistry
 import com.eventslooped.klokka.JobState
+import com.eventslooped.klokka.JobTimeoutException
 import com.eventslooped.klokka.NonRetryable
 import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.WorkerId
@@ -28,7 +29,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -261,16 +261,35 @@ internal class WorkerEngine(
                 ),
             )
 
+            // The lease is no local deadline. The heartbeater renews it for as long
+            // as this attempt is in flight, so it only expires when this worker is dead or
+            // stalled; a stalled worker's late writes are then rejected by the fence. Handler
+            // duration is bounded only by the explicit per-kind timeout, when one is set.
+            val timeout = registration.timeout ?: settings.defaultTimeout
             try {
-                withTimeout(job.leaseUntil - settings.clock.now()) {
+                if (timeout == null) {
                     registration.execute(context, settings.codec, job.payload)
+                    onSuccess(job, startedAt, late)
+                } else {
+                    // withTimeoutOrNull swallows only ITS OWN deadline; a withTimeout the handler
+                    // opened itself still propagates as a TimeoutCancellationException below.
+                    val finished =
+                        withTimeoutOrNull(timeout) {
+                            registration.execute(context, settings.codec, job.payload)
+                            true
+                        }
+                    if (finished == null) {
+                        fail(job, registration, JobTimeoutException(job.kind, timeout))
+                    } else {
+                        onSuccess(job, startedAt, late)
+                    }
                 }
-                onSuccess(job, startedAt, late)
             } catch (e: CancellationException) {
                 if (e is TimeoutCancellationException) {
+                    // A withTimeout the handler opened and let escape: a handler failure.
                     fail(job, registration, e)
                 } else {
-                    // Not our own timeout: the scope is being cancelled (drain/shutdown).
+                    // The scope is being cancelled (drain/shutdown).
                     // Requeue must go through even though this coroutine is cancelled.
                     withContext(NonCancellable) {
                         store.transition(job.id, JobState.Running, JobState.Enqueued, job.fence)

@@ -39,8 +39,19 @@ public interface JobContext {
     public suspend fun progress(fraction: Double)
 
     /**
-     * Extends this run's lease for long jobs. The runtime heartbeats automatically;
-     * call this only when a single operation may outlive the lease and cannot checkpoint.
+     * Renews this run's lease so that it now lasts [by] from the store's current time.
+     *
+     * The lease only tells other workers that this one is alive: the runtime renews it
+     * automatically every heartbeat interval for as long as this attempt is in flight, and
+     * handler duration is bounded only by the per-kind timeout (see `JobRegistry.handle`),
+     * never by the lease. Call this ahead of a single blocking operation that could starve
+     * the heartbeater or outlast a lease by more than one heartbeat interval, passing a
+     * value that covers the whole operation.
+     *
+     * Per the store contract, a lease that has already expired cannot be renewed, not even
+     * by its former holder: another worker may already have revived the job with a higher
+     * fence, and this attempt's completion write will then be rejected. That is the
+     * documented at-least-once case, not an error.
      */
     public suspend fun extendLease(by: Duration)
 }
@@ -56,3 +67,14 @@ public interface JobContext {
 public interface JobHandler<T> {
     public suspend fun JobContext.execute(payload: T)
 }
+
+/**
+ * The failure recorded when a handler exceeds its per-kind timeout. The attempt is
+ * cancelled cooperatively and then treated as an ordinary failure: the retry policy sees
+ * this exception and decides whether to book another attempt. Match on it to retry
+ * timeouts differently from other errors.
+ */
+public class JobTimeoutException(
+    public val kind: String,
+    public val timeout: Duration,
+) : RuntimeException("Job kind '$kind' exceeded its timeout of $timeout")

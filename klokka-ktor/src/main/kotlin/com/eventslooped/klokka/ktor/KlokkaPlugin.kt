@@ -44,6 +44,7 @@ public val Klokka: ApplicationPlugin<KlokkaConfig> =
                 queues = config.queues(),
                 role = config.role,
                 defaultRetry = config.defaultRetry,
+                defaultTimeout = config.defaultTimeout,
                 codec = config.codec,
                 clock = config.clock,
                 lease = config.lease,

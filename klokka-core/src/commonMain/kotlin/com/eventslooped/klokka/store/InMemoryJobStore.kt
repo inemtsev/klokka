@@ -93,6 +93,8 @@ public data class InMemoryJobSnapshot(
     val attempts: Int,
     val fence: Long,
     val queue: QueueName,
+    /** The current lease expiry while Running; null otherwise. */
+    val leaseUntil: Instant?,
 )
 
 /**
@@ -432,6 +434,7 @@ public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStor
                 attempts = record.attempts,
                 fence = record.fence,
                 queue = record.queue,
+                leaseUntil = record.leaseUntil,
             )
         }
 }

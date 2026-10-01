@@ -46,6 +46,14 @@ public class KlokkaConfig {
     /** Retry policy used when a handler's registration does not specify its own. */
     public var defaultRetry: RetryPolicy = RetryPolicy.exponential()
 
+    /**
+     * Per-attempt timeout for kinds whose [handle] call sets none. Null, the default, means
+     * no cap: a handler runs until it returns, with its lease renewed by heartbeat the whole
+     * time. The timeout is independent of [lease]: the lease detects dead workers, the
+     * timeout bounds live ones.
+     */
+    public var defaultTimeout: Duration? = null
+
     /** Payload serialization strategy. */
     public var codec: PayloadCodec = JsonPayloadCodec()
 
@@ -117,15 +125,29 @@ public class KlokkaConfig {
 
     /**
      * Binds a [JobHandler] object to [type]: the form for handlers with dependencies or their
-     * own unit tests. [retry] overrides [defaultRetry] for this kind.
+     * own unit tests. [retry] overrides [defaultRetry] and [timeout] overrides
+     * [defaultTimeout] for this kind; see [JobRegistry.handle] for the timeout semantics.
      */
-    public fun <T> handle(type: JobType<T>, handler: JobHandler<T>, retry: RetryPolicy? = null) {
-        registry.handle(type, handler, retry)
+    public fun <T> handle(
+        type: JobType<T>,
+        handler: JobHandler<T>,
+        retry: RetryPolicy? = null,
+        timeout: Duration? = null,
+    ) {
+        registry.handle(type, handler, retry, timeout)
     }
 
-    /** Binds a suspend lambda to [type]. Same semantics as the object form; [retry] overrides [defaultRetry] for this kind. */
-    public fun <T> handle(type: JobType<T>, retry: RetryPolicy? = null, block: suspend JobContext.(T) -> Unit) {
-        registry.handle(type, retry, block)
+    /**
+     * Binds a suspend lambda to [type]. Same semantics as the object form; [retry] overrides
+     * [defaultRetry] and [timeout] overrides [defaultTimeout] for this kind.
+     */
+    public fun <T> handle(
+        type: JobType<T>,
+        retry: RetryPolicy? = null,
+        timeout: Duration? = null,
+        block: suspend JobContext.(T) -> Unit,
+    ) {
+        registry.handle(type, retry, timeout, block)
     }
 
     /**

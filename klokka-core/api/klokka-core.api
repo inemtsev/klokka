@@ -212,10 +212,10 @@ public final class com/eventslooped/klokka/JobOptionsBuilder {
 
 public final class com/eventslooped/klokka/JobRegistry {
 	public fun <init> ()V
-	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;)V
-	public final fun handle (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;)V
-	public static synthetic fun handle$default (Lcom/eventslooped/klokka/JobRegistry;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;ILjava/lang/Object;)V
-	public static synthetic fun handle$default (Lcom/eventslooped/klokka/JobRegistry;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public final fun handle-5_5nbZA (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lkotlin/jvm/functions/Function3;)V
+	public static synthetic fun handle-5_5nbZA$default (Lcom/eventslooped/klokka/JobRegistry;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public final fun handle-Q2Q30fc (Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;)V
+	public static synthetic fun handle-Q2Q30fc$default (Lcom/eventslooped/klokka/JobRegistry;Lcom/eventslooped/klokka/JobType;Lcom/eventslooped/klokka/JobHandler;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;ILjava/lang/Object;)V
 	public final fun kinds ()Ljava/util/Set;
 	public final fun types ()Ljava/util/List;
 }
@@ -299,6 +299,12 @@ public final class com/eventslooped/klokka/JobStatus : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/eventslooped/klokka/JobStatus;
 	public static fun values ()[Lcom/eventslooped/klokka/JobStatus;
+}
+
+public final class com/eventslooped/klokka/JobTimeoutException : java/lang/RuntimeException {
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getTimeout-UwyO8pc ()J
 }
 
 public final class com/eventslooped/klokka/JobType {
@@ -504,12 +510,13 @@ public final class com/eventslooped/klokka/runtime/KlokkaRuntime {
 }
 
 public final class com/eventslooped/klokka/runtime/KlokkaSettings {
-	public synthetic fun <init> (Ljava/util/List;Lcom/eventslooped/klokka/runtime/KlokkaRole;Lcom/eventslooped/klokka/RetryPolicy;Lcom/eventslooped/klokka/PayloadCodec;Lkotlin/time/Clock;JJJILcom/eventslooped/klokka/RetentionPolicy;JJJLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/util/List;Lcom/eventslooped/klokka/runtime/KlokkaRole;Lcom/eventslooped/klokka/RetryPolicy;Lcom/eventslooped/klokka/PayloadCodec;Lkotlin/time/Clock;JJJILcom/eventslooped/klokka/RetentionPolicy;JJJLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/List;Lcom/eventslooped/klokka/runtime/KlokkaRole;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lcom/eventslooped/klokka/PayloadCodec;Lkotlin/time/Clock;JJJILcom/eventslooped/klokka/RetentionPolicy;JJJLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/List;Lcom/eventslooped/klokka/runtime/KlokkaRole;Lcom/eventslooped/klokka/RetryPolicy;Lkotlin/time/Duration;Lcom/eventslooped/klokka/PayloadCodec;Lkotlin/time/Clock;JJJILcom/eventslooped/klokka/RetentionPolicy;JJJLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getClaimBatch ()I
 	public final fun getClock ()Lkotlin/time/Clock;
 	public final fun getCodec ()Lcom/eventslooped/klokka/PayloadCodec;
 	public final fun getDefaultRetry ()Lcom/eventslooped/klokka/RetryPolicy;
+	public final fun getDefaultTimeout-FghU774 ()Lkotlin/time/Duration;
 	public final fun getDrainTimeout-UwyO8pc ()J
 	public final fun getHeartbeatInterval-UwyO8pc ()J
 	public final fun getLateThreshold-UwyO8pc ()J
@@ -725,16 +732,18 @@ public abstract interface class com/eventslooped/klokka/spi/TransactionalStore :
 }
 
 public final class com/eventslooped/klokka/store/InMemoryJobSnapshot {
-	public synthetic fun <init> (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;Lkotlin/time/Instant;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/eventslooped/klokka/JobState;
 	public final fun component2 ()I
 	public final fun component3 ()J
 	public final fun component4-xTxTNyk ()Ljava/lang/String;
-	public final fun copy-8mV7fnY (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
-	public static synthetic fun copy-8mV7fnY$default (Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;ILjava/lang/Object;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
+	public final fun component5 ()Lkotlin/time/Instant;
+	public final fun copy-l47xqNY (Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;Lkotlin/time/Instant;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
+	public static synthetic fun copy-l47xqNY$default (Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;Lcom/eventslooped/klokka/JobState;IJLjava/lang/String;Lkotlin/time/Instant;ILjava/lang/Object;)Lcom/eventslooped/klokka/store/InMemoryJobSnapshot;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAttempts ()I
 	public final fun getFence ()J
+	public final fun getLeaseUntil ()Lkotlin/time/Instant;
 	public final fun getQueue-xTxTNyk ()Ljava/lang/String;
 	public final fun getState ()Lcom/eventslooped/klokka/JobState;
 	public fun hashCode ()I

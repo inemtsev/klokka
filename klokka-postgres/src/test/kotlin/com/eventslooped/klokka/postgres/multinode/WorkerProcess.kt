@@ -56,9 +56,9 @@ public fun main() {
         recordEvidence(dataSource, jobId.value, nodeId, attempt, "started")
         // Blocking sleep on purpose: with no suspension point between start and the
         // completion write, the handler's side effects always run to the end, even when
-        // the runtime's local lease timeout expired while the process sat in SIGSTOP.
-        // That makes the zombie scenario deterministic: the stale completion is always
-        // WRITTEN, and only the fenced store transition is rejected.
+        // the lease expired while the process sat in SIGSTOP. That makes the zombie
+        // scenario deterministic: the stale completion is always WRITTEN, and only the
+        // fenced store transition is rejected.
         Thread.sleep(holdMillis)
         recordEvidence(dataSource, jobId.value, nodeId, attempt, "completed")
     }
@@ -70,8 +70,9 @@ public fun main() {
     val settings =
         KlokkaSettings(
             workerId = WorkerId(nodeId),
-            // The runtime's per-job timeout equals the initial lease window, so every
-            // hold time used by the suite must fit inside this.
+            // Short lease so a SIGSTOPped node loses its jobs quickly. The lease bounds
+            // nothing on a live node: heartbeats renew it every second, and there is no
+            // per-kind timeout, so hold times are free to exceed it.
             lease = 8.seconds,
             heartbeatInterval = 1.seconds,
             pollInterval = 500.milliseconds,
