@@ -63,7 +63,7 @@ Three levels. Each is a strict superset of the previous one.
 
 ### Level 0: one file, zero infrastructure
 
-In-memory store, loud startup warning outside dev config.
+In-memory store, loud startup warning outside dev config, downgraded to a one-line INFO by the explicit `InMemoryJobStore(ephemeral = true)` acknowledgment.
 
 ```kotlin
 val SendWelcome = JobType("send-welcome-email", WelcomeEmail.serializer())
@@ -297,8 +297,8 @@ The failure mode with no error gets first-class treatment: schedules expose a li
 | Milestone | Contents | Exit criterion |
 |---|---|---|
 | **M0: Design validation** | This document published, community feedback collected, namespaces settled | No unresolved objection to the core model or SPI |
-| **M1: v0.1 on Maven Central** | Core runtime, in-memory and Postgres stores, enqueue/delay/recurring, retries and dead-letter, graceful drain, events Flow, minimal dashboard, multi-node integration tests | A two-instance demo survives kill -9 mid-job with zero lost jobs |
-| **M2: Registry release** | Transactional enqueue (JDBC and Exposed), unique keys, misfire policies, continuations and batches, SSE dashboard with per-job logs, Micrometer and OTel modules, docs site, then the ktor-plugin-registry PR | Listed on start.ktor.io with the dashboard in the screenshots |
+| **M1: v0.1 on Maven Central** | Core runtime, in-memory and Postgres stores, enqueue/delay/recurring, misfire policies, retries and dead-letter, graceful drain, events Flow, minimal dashboard, multi-node integration tests | A two-instance demo survives kill -9 mid-job with zero lost jobs |
+| **M2: Registry release** | Transactional enqueue (JDBC and Exposed), unique and idempotency keys, continuations and batches, SSE dashboard with per-job logs, Micrometer and OTel modules, docs site, then the ktor-plugin-registry PR | Listed on start.ktor.io with the dashboard in the screenshots |
 | **M3: Ecosystem** | TCK published, KSP module, community store outreach, honest benchmarks | At least one third-party store passing the TCK |
 
 The full backlog lives in [the issue tracker](https://github.com/inemtsev/klokka/issues).
@@ -343,6 +343,7 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Dead-letter record is last error only | `JobStore.transition` takes an optional `JobError` (type, message, truncated stack trace, attempt, at) that the runtime passes on every transition to Failed and DeadLettered; the store persists it in the same atomic write, replaces it on each failure, and never clears it, so a requeued or later-succeeded job still shows what went wrong and which attempt it was. Carried as a parameter, not on the `Failed`/`DeadLettered` state values, because both stores compare the `from` state by value in the CAS and an error on the state would make `from` unmatchable. Surfaced on `JobDetails.lastError` and the dashboard detail page. Attempt history and trace ids deferred to M2 as additive fields; #7 | 2026-10-02 |
 | Logging seam and per-job MDC | The runtime logs its own messages (supervisor restarts, failed and dead-lettered attempts) through an internal `expect fun klokkaLogger(name)` whose JVM actual wraps slf4j; no public logging facade is added. The MDC-tagged logger from #12 is delivered as context, not as a type: on the JVM the worker runs each handler inside a coroutine-aware MDC scope carrying `klokka.jobId`, `klokka.kind`, `klokka.queue`, `klokka.attempt` and `klokka.scheduleId`, so a handler's own slf4j logger and every library beneath it carry the job identity, and `JobContext` gains nothing. Platforms without MDC run the handler unchanged. Closes #28 and the second half of #31 | 2026-10-02 |
 | Wake-up NOTIFY lives in the schema | Push wake-ups come from AFTER INSERT/UPDATE triggers calling `pg_notify`, not from application code, so every write path that makes a job claimable notifies: Klokka's enqueue, the future transactional enqueue on the application's own connection, dashboard or psql requeues. Commit-time delivery makes "notify iff the job exists" automatic. The listener is one dedicated session-mode connection; a dead listener degrades to poll latency, never to lost jobs | 2026-09-13 |
+| In-memory store acknowledgment | `InMemoryJobStore(ephemeral = true)` is the explicit statement that losing every job on restart is intended (cache warming, non-critical notifications). The flag lives on the store in `klokka-core` as a plain `val` and changes nothing about store behavior; `klokka-ktor` reads it to log one INFO line instead of the WARN it emits for an unacknowledged in-memory store outside development mode. Development mode stays silent either way. The multi-replica caveat (every instance fires its own recurring schedules, as with Spring `@Scheduled`) is documented, not detected; #29 | 2026-10-13 |
 
 ## 13. Alternatives considered
 

@@ -779,13 +779,14 @@ public final class com/eventslooped/klokka/store/InMemoryJobSnapshot {
 
 public final class com/eventslooped/klokka/store/InMemoryJobStore : com/eventslooped/klokka/spi/JobStore, com/eventslooped/klokka/spi/PushCapableStore, com/eventslooped/klokka/spi/QueryableStore {
 	public fun <init> ()V
-	public fun <init> (Lkotlin/time/Clock;)V
-	public synthetic fun <init> (Lkotlin/time/Clock;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lkotlin/time/Clock;Z)V
+	public synthetic fun <init> (Lkotlin/time/Clock;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun claim-ARRUTgc (Ljava/util/List;Ljava/util/Set;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun completeFire (Ljava/lang/String;JLjava/util/List;Lkotlin/time/Instant;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun countsByStatus (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun dueSchedules-F0kyGKk (Ljava/util/Set;IJLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun enqueue (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getEphemeral ()Z
 	public fun getJob-EYbf1d4 (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun heartbeat-Yj_zwhA (Ljava/util/List;Ljava/lang/String;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun listJobs (Lcom/eventslooped/klokka/spi/JobQuery;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

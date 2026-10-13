@@ -37,7 +37,11 @@ import kotlin.time.ExperimentalTime
  * collected here and applied when the plugin builds the [KlokkaRuntime].
  */
 public class KlokkaConfig {
-    /** Backing job storage. Defaults to a non-persistent in-memory store, see the plugin's startup warning. */
+    /**
+     * Backing job storage. Defaults to a non-persistent in-memory store, which logs a startup
+     * warning outside development mode. Pass `InMemoryJobStore(ephemeral = true)` to keep the
+     * in-memory store deliberately and downgrade that warning to a one-line INFO.
+     */
     public var store: JobStore = InMemoryJobStore()
 
     /** Which parts of the runtime this process runs. */

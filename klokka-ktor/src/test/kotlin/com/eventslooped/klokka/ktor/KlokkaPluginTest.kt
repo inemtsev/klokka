@@ -22,9 +22,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.Serializable
+import org.slf4j.Logger
+import java.lang.reflect.Proxy
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -59,6 +63,28 @@ private class ClaimRecordingStore(
         firstClaimWorker.complete(worker)
         return delegate.claim(queues, kinds, limit, lease, worker)
     }
+}
+
+/**
+ * An slf4j [Logger] that records `level -> message` for every `info` and `warn` call, built
+ * with a dynamic proxy so the test module needs no logging binding. Other calls are ignored
+ * and report `false` for the `isXEnabled` checks.
+ */
+private class RecordingLogger {
+    val records = CopyOnWriteArrayList<Pair<String, String>>()
+
+    val logger: Logger =
+        Proxy.newProxyInstance(Logger::class.java.classLoader, arrayOf(Logger::class.java)) { _, method, args ->
+            when {
+                method.name in setOf("info", "warn") && !args.isNullOrEmpty() && args[0] is String ->
+                    records.add(method.name to (args[0] as String))
+                method.name == "getName" -> return@newProxyInstance "recording"
+                method.returnType == Boolean::class.javaPrimitiveType -> return@newProxyInstance false
+            }
+            null
+        } as Logger
+
+    fun messages(level: String): List<String> = records.filter { it.first == level }.map { it.second }
 }
 
 public class KlokkaPluginTest {
@@ -240,4 +266,61 @@ public class KlokkaPluginTest {
 
             withTimeout(5.seconds) { succeeded.await() }
         }
+
+    /**
+     * Installs the plugin with [store] on an application whose development mode is [devMode]
+     * and returns what the plugin logged at INFO and WARN while starting up. testApplication
+     * defaults to development mode, so the production path is reached by turning it off.
+     */
+    private fun startupLog(
+        store: InMemoryJobStore,
+        devMode: Boolean,
+    ): RecordingLogger {
+        val recording = RecordingLogger()
+        testApplication {
+            environment { log = recording.logger }
+            serverConfig { developmentMode = devMode }
+            install(Klokka) {
+                this.store = store
+                drainTimeout = 2.seconds
+            }
+            startApplication()
+        }
+        return recording
+    }
+
+    @Test
+    public fun inMemoryStoreIsNotEphemeralByDefault() {
+        assertFalse(InMemoryJobStore().ephemeral)
+        assertTrue(InMemoryJobStore(ephemeral = true).ephemeral)
+    }
+
+    @Test
+    public fun unacknowledgedInMemoryStoreWarnsOutsideDevelopmentMode() {
+        val log = startupLog(InMemoryJobStore(), devMode = false)
+
+        val warnings = log.messages("warn").filter { "in-memory" in it }
+        assertEquals(1, warnings.size)
+        assertTrue("InMemoryJobStore(ephemeral = true)" in warnings.single())
+    }
+
+    @Test
+    public fun ephemeralInMemoryStoreLogsOneInfoLineAndNoWarningOutsideDevelopmentMode() {
+        val log = startupLog(InMemoryJobStore(ephemeral = true), devMode = false)
+
+        assertTrue(log.messages("warn").isEmpty(), "unexpected warnings: ${log.messages("warn")}")
+        val infos = log.messages("info").filter { "in-memory" in it }
+        assertEquals(1, infos.size)
+        assertTrue("will not survive a restart" in infos.single())
+    }
+
+    @Test
+    public fun inMemoryStoreIsSilentInDevelopmentMode() {
+        listOf(InMemoryJobStore(), InMemoryJobStore(ephemeral = true)).forEach { store ->
+            val log = startupLog(store, devMode = true)
+
+            assertTrue(log.messages("warn").none { "in-memory" in it })
+            assertTrue(log.messages("info").none { "in-memory" in it })
+        }
+    }
 }

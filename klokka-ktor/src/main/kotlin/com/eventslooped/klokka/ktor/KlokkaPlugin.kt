@@ -71,14 +71,25 @@ public val Klokka: ApplicationPlugin<KlokkaConfig> =
             )
         }
 
-        // The in-memory store loses all state on restart (issue #29). Warn once outside
-        // development mode, where that tradeoff is expected rather than a footgun.
-        if (config.store is InMemoryJobStore && !application.developmentMode) {
-            application.log.warn(
-                "Klokka is configured with the in-memory job store: enqueued and in-flight " +
-                    "jobs will not survive an application restart. Configure a persistent " +
-                    "JobStore before deploying to production.",
-            )
+        // The in-memory store loses all state on restart. Outside development mode, where that
+        // tradeoff is expected, an unacknowledged in-memory store gets a loud WARN (the likely
+        // "forgot to configure a store" mistake), while InMemoryJobStore(ephemeral = true) is a
+        // deliberate choice and gets a single INFO line instead (issue #29).
+        val store = config.store
+        if (store is InMemoryJobStore && !application.developmentMode) {
+            if (store.ephemeral) {
+                application.log.info(
+                    "Klokka: using the in-memory job store by choice (ephemeral = true); jobs will not " +
+                        "survive a restart, and each replica runs its own recurring jobs.",
+                )
+            } else {
+                application.log.warn(
+                    "Klokka is configured with the in-memory job store: enqueued and in-flight " +
+                        "jobs will not survive an application restart. Configure a persistent " +
+                        "JobStore, or pass InMemoryJobStore(ephemeral = true) to acknowledge that " +
+                        "losing jobs on restart is intended.",
+                )
+            }
         }
 
         // A handler bound for a kind whose default queue this process never drains can only run

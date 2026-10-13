@@ -36,7 +36,7 @@ fun Application.module() {
 }
 ```
 
-With no store configured, `install(Klokka)` uses the in-memory store and logs a warning outside development mode: jobs do not survive a restart.
+With no store configured, `install(Klokka)` uses the in-memory store and logs a warning outside development mode: jobs do not survive a restart. If that is what you want (cache warming, non-critical notifications), pass `InMemoryJobStore(ephemeral = true)` and the warning becomes a one-line INFO. The in-memory store shares nothing between instances, so with 2+ replicas every instance runs its own recurring jobs and they fire in duplicate, same as Spring's `@Scheduled`.
 
 ## Growing up without rewriting
 
@@ -92,7 +92,7 @@ fun KlokkaConfig.orderJobs(email: EmailService, inventory: InventoryClient) {
 }
 
 install(Klokka) {
-    store = InMemoryJobStore()                 // PostgresJobStore(dataSource) once klokka-postgres ships
+    store = InMemoryJobStore()                 // or PostgresJobStore(dataSource) from klokka-postgres
     role = KlokkaRole.Both                     // Producer on the web tier, Worker on the fleet, same module
     queue("critical", concurrency = 8)
     queue("email", concurrency = 32)
@@ -132,8 +132,8 @@ klokka.events
 |---|---|---|
 | `klokka-core` | Framework-free engine: runtime, `JobStore` SPI, in-memory store, retry policies, events | working |
 | `klokka-ktor` | `install(Klokka)`, `Application.klokka`, lifecycle wiring | working |
-| `klokka-postgres` | SKIP LOCKED claiming, LISTEN/NOTIFY wake-ups, bundled migrations | next (M1) |
-| `klokka-dashboard` | Server-rendered views with SSE, fails closed without authentication | next (M1 minimal, M2 full) |
+| `klokka-postgres` | SKIP LOCKED claiming, fenced CAS writes, LISTEN/NOTIFY wake-ups with poll as safety net, bundled migrations, multi-node kill -9 suite | working |
+| `klokka-dashboard` | Server-rendered views: jobs by state, job detail with last error, requeue; fails closed without authentication | working (minimal); SSE, per-job logs and schedules view in M2 |
 | `klokka-exposed`, `klokka-micrometer`, `klokka-opentelemetry`, `klokka-tck`, `klokka-ksp` | Bridges and tooling | later |
 
 Maven coordinates will be `com.eventslooped:klokka-*`. Until the first release, build from source with `./gradlew build`.

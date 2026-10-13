@@ -105,8 +105,28 @@ public data class InMemoryJobSnapshot(
  * An in-process, non-persistent [JobStore]. Backs single-process usage and the test suite;
  * all state is lost on restart. All time comparisons use the injected [clock], which plays
  * the role database time plays for a real backend, so tests can drive time deterministically.
+ *
+ * Passing `ephemeral = true` is the caller's explicit acknowledgment that losing every job on
+ * restart is intended, as for cache warming or non-critical notifications. It changes nothing
+ * about how the store behaves; it only tells host integrations such as the Ktor plugin to log
+ * a one-line INFO at startup instead of the loud warning they emit for an unacknowledged
+ * in-memory store outside development mode.
+ *
+ * Multi-replica caveat: the store holds no state outside its own process, so nothing is
+ * shared between instances. Every instance runs its own copy of every recurring schedule, so
+ * two or more replicas mean duplicate fires (the same as Spring's `@Scheduled`), and the
+ * dashboard on one instance sees only that instance's jobs. Use a shared, persistent store
+ * when more than one instance runs.
+ *
+ * @param clock Source of time for every comparison the store makes.
+ * @param ephemeral True when the caller deliberately accepts that all jobs are lost on
+ * restart. Defaults to false, which hosts treat as "the store may have been left at its
+ * default by mistake". It has no effect on store behavior.
  */
-public class InMemoryJobStore(private val clock: Clock = Clock.System) : JobStore, PushCapableStore, QueryableStore {
+public class InMemoryJobStore(
+    private val clock: Clock = Clock.System,
+    public val ephemeral: Boolean = false,
+) : JobStore, PushCapableStore, QueryableStore {
     private val mutex = Mutex()
     private val records = linkedMapOf<JobId, JobRecord>()
     private val schedules = linkedMapOf<String, ScheduleRecord>()
