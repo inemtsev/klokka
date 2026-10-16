@@ -1,8 +1,20 @@
 # Klokka
 
-Persistent background jobs for Ktor. A coroutines-native queue and scheduler with typed suspend handlers, retries, transactional enqueue, and a live dashboard, on the database you already run. In Norwegian, something reliable "går som ei klokke": it runs like a clock.
+Persistent background jobs for Ktor. A coroutines-native queue and scheduler with typed suspend handlers, retries, recurring schedules, and a dashboard, on the database you already run. In Norwegian, something reliable "går som ei klokke": it runs like a clock.
 
-> **Status: pre-release.** The core runtime, recurring jobs, both stores (in-memory and Postgres with LISTEN/NOTIFY push), the Ktor plugin, and the minimal dashboard work and are tested, including a multi-node kill -9 suite; nothing is on Maven Central yet. Publishing is what remains of the current milestone. See [Roadmap](#roadmap) and the [design document](docs/design.md).
+## Install
+
+Artifacts are on Maven Central under `com.eventslooped`. Built against Kotlin 2.4 and Ktor 3.5, JVM 17.
+
+```kotlin
+dependencies {
+    implementation("com.eventslooped:klokka-ktor:0.1.0")        // install(Klokka), brings klokka-core
+    implementation("com.eventslooped:klokka-postgres:0.1.0")    // Postgres store
+    implementation("com.eventslooped:klokka-dashboard:0.1.0")   // optional dashboard routes
+}
+```
+
+Version 0.1.0 is the first release and the end of milestone M1. See [Roadmap](#roadmap) for what M2 adds and the [design document](docs/design.md) for the semantics contract.
 
 ## Why
 
@@ -136,7 +148,7 @@ klokka.events
 | `klokka-dashboard` | Server-rendered views: jobs by state, job detail with last error, requeue; fails closed without authentication | working (minimal); SSE, per-job logs and schedules view in M2 |
 | `klokka-exposed`, `klokka-micrometer`, `klokka-opentelemetry`, `klokka-tck`, `klokka-ksp` | Bridges and tooling | later |
 
-Maven coordinates will be `com.eventslooped:klokka-*`. Until the first release, build from source with `./gradlew build`.
+All artifacts share the version number and are published together; see [Install](#install).
 
 ## Roadmap
 

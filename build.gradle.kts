@@ -30,7 +30,7 @@ apiValidation {
 
 allprojects {
     group = "com.eventslooped"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.1.0"
 }
 
 // One-line, consumer-facing POM description per published module.
