@@ -39,6 +39,7 @@ val moduleDescriptions = mapOf(
     "klokka-ktor" to "Ktor plugin: install(Klokka), lifecycle wiring, and the configuration DSL",
     "klokka-postgres" to "Postgres store: SKIP LOCKED claims, LISTEN/NOTIFY push wake-ups, bundled migrations",
     "klokka-dashboard" to "Server-rendered dashboard: states overview, job detail, requeue; mounts behind your own auth",
+    "klokka-exposed" to "Exposed bridge: transactional enqueue inside an Exposed JdbcTransaction",
 )
 
 subprojects {

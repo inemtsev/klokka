@@ -10,6 +10,7 @@ import com.eventslooped.klokka.QueueName
 import com.eventslooped.klokka.RetentionPolicy
 import com.eventslooped.klokka.WorkerId
 import com.eventslooped.klokka.spi.ClaimedJob
+import com.eventslooped.klokka.spi.JdbcTransactionalStore
 import com.eventslooped.klokka.spi.JobDetails
 import com.eventslooped.klokka.spi.JobQuery
 import com.eventslooped.klokka.spi.JobStore
@@ -43,6 +44,8 @@ import kotlin.time.toKotlinInstant
 private val TERMINAL_STATES = listOf("Succeeded", "DeadLettered", "Cancelled")
 private val TERMINAL_STATES_SQL = TERMINAL_STATES.joinToString(", ") { "'$it'" }
 
+private const val JOBS_TABLE = "klokka_jobs"
+
 /** How often the uniqueKey insert/select race (a conflicting row turning terminal in between) is retried. */
 private const val UNIQUE_KEY_RETRIES = 5
 
@@ -60,7 +63,9 @@ private const val NOTIFICATION_WAIT_MILLIS = 500
  *
  * [schema] names the Postgres schema holding Klokka's tables; null uses the connection's
  * default search_path. When set, the store creates it if missing and pins search_path on
- * every borrowed connection. Must be a plain identifier (letters, digits, underscore).
+ * every connection it borrows itself; transactional enqueue on a caller's connection
+ * qualifies the table name instead and never touches the caller's session. Must be a plain
+ * identifier (letters, digits, underscore).
  *
  * [dispatcher] is where every blocking JDBC call runs; the caller's coroutine is never
  * blocked on a connection. Size it alongside the [DataSource] pool.
@@ -90,6 +95,9 @@ public class PostgresStoreConfig(
  * - [transition] and [completeFire] are compare-and-set `UPDATE`s; a stale state or fence
  *   changes nothing.
  * - The uniqueKey rule is a partial unique index, not application logic.
+ * - Transactional [enqueue] runs its INSERTs on the caller's JDBC connection: the job exists
+ *   only if that transaction commits, time is the statement's `clock_timestamp()`, and the
+ *   schema is qualified in the SQL instead of set on the caller's session.
  * - [sweep] compiles the declarative [RetentionPolicy] into bulk `DELETE`s.
  *
  * Instants are stored with Postgres's microsecond precision; sub-microsecond components
@@ -98,7 +106,7 @@ public class PostgresStoreConfig(
 public class PostgresJobStore(
     private val dataSource: DataSource,
     private val config: PostgresStoreConfig = PostgresStoreConfig(),
-) : JobStore, PushCapableStore, QueryableStore {
+) : JobStore, PushCapableStore, QueryableStore, JdbcTransactionalStore {
     @Volatile
     private var migrated = false
     private val migrationLock = Any()
@@ -116,17 +124,49 @@ public class PostgresJobStore(
     // ---- enqueue --------------------------------------------------------------------------
 
     override suspend fun enqueue(jobs: List<NewJob>): List<JobId> =
-        withConnection { connection -> enqueueOn(connection, jobs) }
+        withConnection { connection -> enqueueOn(connection, jobs, EnqueueTarget.Own) }
 
-    private fun enqueueOn(connection: Connection, jobs: List<NewJob>): List<JobId> {
+    override suspend fun enqueue(tx: Connection, jobs: List<NewJob>): List<JobId> {
+        // Migrations run on the store's own connections, never inside the caller's transaction.
+        if (config.autoMigrate && !migrated) migrate()
+        // The inserts run on the caller's coroutine, on the caller's connection, with no session
+        // state touched: the schema goes into the table name instead of a SET search_path.
+        return enqueueOn(tx, jobs, EnqueueTarget.Transactional(qualifiedJobsTable()))
+    }
+
+    private fun qualifiedJobsTable(): String = config.schema?.let { "$it.$JOBS_TABLE" } ?: JOBS_TABLE
+
+    /**
+     * Where and how [enqueueOn] writes. [Own] is the store's borrowed connection: unqualified
+     * table (search_path is pinned), `now()` for due-ness, `enqueued_at` from the column default.
+     * [Transactional] is the caller's transaction: a possibly schema-qualified table, and
+     * `clock_timestamp()` for due-ness and `enqueued_at`, so a long transaction neither
+     * misjudges due-ness nor backdates the job to its own start.
+     */
+    private sealed class EnqueueTarget(val table: String, val columns: String, val values: String) {
+        object Own : EnqueueTarget(
+            JOBS_TABLE,
+            "kind, payload, payload_version, queue, state, run_at, unique_key, schedule_id",
+            "?, ?, ?, ?, CASE WHEN ?::timestamptz <= now() THEN 'Enqueued' ELSE 'Scheduled' END, ?, ?, ?",
+        )
+
+        class Transactional(table: String) : EnqueueTarget(
+            table,
+            "kind, payload, payload_version, queue, state, run_at, unique_key, schedule_id, enqueued_at",
+            "?, ?, ?, ?, CASE WHEN ?::timestamptz <= clock_timestamp() THEN 'Enqueued' ELSE 'Scheduled' END, " +
+                "?, ?, ?, clock_timestamp()",
+        )
+    }
+
+    private fun enqueueOn(connection: Connection, jobs: List<NewJob>, target: EnqueueTarget): List<JobId> {
         val plainSql = """
-            INSERT INTO klokka_jobs (kind, payload, payload_version, queue, state, run_at, unique_key, schedule_id)
-            VALUES (?, ?, ?, ?, CASE WHEN ?::timestamptz <= now() THEN 'Enqueued' ELSE 'Scheduled' END, ?, ?, ?)
+            INSERT INTO ${target.table} (${target.columns})
+            VALUES (${target.values})
             RETURNING id
         """
         val uniqueSql = """
-            INSERT INTO klokka_jobs (kind, payload, payload_version, queue, state, run_at, unique_key, schedule_id)
-            VALUES (?, ?, ?, ?, CASE WHEN ?::timestamptz <= now() THEN 'Enqueued' ELSE 'Scheduled' END, ?, ?, ?)
+            INSERT INTO ${target.table} (${target.columns})
+            VALUES (${target.values})
             ON CONFLICT (unique_key) WHERE unique_key IS NOT NULL AND state NOT IN ($TERMINAL_STATES_SQL) DO NOTHING
             RETURNING id
         """
@@ -138,13 +178,13 @@ public class PostgresJobStore(
                     result.add(ps.executeQuery().use { rs -> rs.singleId() })
                 }
             } else {
-                result.add(enqueueUnique(connection, uniqueSql, job))
+                result.add(enqueueUnique(connection, target.table, uniqueSql, job))
             }
         }
         return result
     }
 
-    private fun enqueueUnique(connection: Connection, uniqueSql: String, job: NewJob): JobId {
+    private fun enqueueUnique(connection: Connection, table: String, uniqueSql: String, job: NewJob): JobId {
         repeat(UNIQUE_KEY_RETRIES) {
             connection.prepareStatement(uniqueSql).use { ps ->
                 bindNewJob(ps, job)
@@ -153,7 +193,7 @@ public class PostgresJobStore(
             // Conflict: an existing non-terminal row owns the key. Idempotent success returns
             // its id. If it went terminal between the two statements, insert again.
             connection.prepareStatement(
-                "SELECT id FROM klokka_jobs WHERE unique_key = ? AND state NOT IN ($TERMINAL_STATES_SQL) LIMIT 1",
+                "SELECT id FROM $table WHERE unique_key = ? AND state NOT IN ($TERMINAL_STATES_SQL) LIMIT 1",
             ).use { ps ->
                 ps.setString(1, job.uniqueKey)
                 ps.executeQuery().use { rs -> if (rs.next()) return JobId(rs.getLong(1).toString()) }
@@ -410,7 +450,7 @@ public class PostgresJobStore(
                     connection.rollback()
                     null
                 } else {
-                    val ids = enqueueOn(connection, runs)
+                    val ids = enqueueOn(connection, runs, EnqueueTarget.Own)
                     connection.commit()
                     ids
                 }

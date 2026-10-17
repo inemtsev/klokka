@@ -354,6 +354,9 @@ public final class com/eventslooped/klokka/JsonPayloadCodec$Companion {
 	public final fun getDEFAULT_JSON ()Lkotlinx/serialization/json/Json;
 }
 
+public abstract interface annotation class com/eventslooped/klokka/KlokkaBridgeApi : java/lang/annotation/Annotation {
+}
+
 public abstract interface class com/eventslooped/klokka/MisfirePolicy {
 }
 
@@ -509,6 +512,20 @@ public final class com/eventslooped/klokka/WorkerId$Companion {
 	public final fun random-pcsyqdI ()Ljava/lang/String;
 }
 
+public final class com/eventslooped/klokka/jdbc/PendingEnqueue {
+	public final fun discard ()V
+	public final fun getId-HPaSSh4 ()Ljava/lang/String;
+	public final fun publish ()V
+}
+
+public final class com/eventslooped/klokka/jdbc/TransactionalEnqueueKt {
+	public static final fun enqueue (Lcom/eventslooped/klokka/runtime/KlokkaRuntime;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Ljava/sql/Connection;Lcom/eventslooped/klokka/JobOptions;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun enqueue$default (Lcom/eventslooped/klokka/runtime/KlokkaRuntime;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Ljava/sql/Connection;Lcom/eventslooped/klokka/JobOptions;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun enqueueWithin (Lcom/eventslooped/klokka/runtime/KlokkaRuntime;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Lkotlin/time/Instant;Lcom/eventslooped/klokka/JobOptions;Ljava/sql/Connection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun schedule (Lcom/eventslooped/klokka/runtime/KlokkaRuntime;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Lkotlin/time/Instant;Ljava/sql/Connection;Lcom/eventslooped/klokka/JobOptions;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun schedule$default (Lcom/eventslooped/klokka/runtime/KlokkaRuntime;Lcom/eventslooped/klokka/JobType;Ljava/lang/Object;Lkotlin/time/Instant;Ljava/sql/Connection;Lcom/eventslooped/klokka/JobOptions;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
 public final class com/eventslooped/klokka/runtime/KlokkaRole : java/lang/Enum {
 	public static final field Both Lcom/eventslooped/klokka/runtime/KlokkaRole;
 	public static final field Producer Lcom/eventslooped/klokka/runtime/KlokkaRole;
@@ -592,6 +609,9 @@ public final class com/eventslooped/klokka/spi/ClaimedJob {
 	public final fun getScheduledFor ()Lkotlin/time/Instant;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/eventslooped/klokka/spi/JdbcTransactionalStore : com/eventslooped/klokka/spi/TransactionalStore {
 }
 
 public final class com/eventslooped/klokka/spi/JobDetails {

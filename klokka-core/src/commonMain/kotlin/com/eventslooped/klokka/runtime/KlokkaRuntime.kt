@@ -127,25 +127,30 @@ public class KlokkaRuntime(
         persist(type, payload, at, options)
 
     private suspend fun <T> persist(type: JobType<T>, payload: T, at: Instant, options: JobOptions): JobId {
-        val encoded = settings.codec.encode(type.serializer, payload)
-        val queue = options.queue ?: type.queue
-        val id =
-            store.enqueue(
-                listOf(
-                    NewJob(
-                        kind = type.kind,
-                        payload = encoded,
-                        queue = queue,
-                        runAt = at,
-                        uniqueKey = options.uniqueKey,
-                    ),
-                ),
-            ).first()
-        eventsFlow.tryEmit(
-            JobEvent.Enqueued(jobId = id, kind = type.kind, at = settings.clock.now(), queue = queue, scheduledFor = at),
-        )
+        val job = newJob(type, payload, at, options)
+        val id = store.enqueue(listOf(job)).first()
+        emit(enqueuedEvent(id, job))
         return id
     }
+
+    /** The store this runtime writes to; transactional enqueue checks its capabilities. */
+    internal val jobStore: JobStore get() = store
+
+    /** The runtime clock's current time: the due time of a job enqueued "now". */
+    internal fun now(): Instant = settings.clock.now()
+
+    /** Encodes [payload] and resolves the queue: [JobOptions.queue] if set, else [JobType.queue]. */
+    internal fun <T> newJob(type: JobType<T>, payload: T, at: Instant, options: JobOptions): NewJob =
+        NewJob(
+            kind = type.kind,
+            payload = settings.codec.encode(type.serializer, payload),
+            queue = options.queue ?: type.queue,
+            runAt = at,
+            uniqueKey = options.uniqueKey,
+        )
+
+    internal fun enqueuedEvent(id: JobId, job: NewJob): JobEvent.Enqueued =
+        JobEvent.Enqueued(jobId = id, kind = job.kind, at = settings.clock.now(), queue = job.queue, scheduledFor = job.runAt)
 
     /**
      * Declares a recurring schedule: [payload] is enqueued as a run of [type] every time

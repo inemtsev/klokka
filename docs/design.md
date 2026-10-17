@@ -135,11 +135,12 @@ class ReportHandler(private val reports: ReportService) : JobHandler<ReportReque
 // Transactional enqueue: the job exists iff the transaction commits.
 // The transaction is passed explicitly, because thread-local transaction
 // state does not survive coroutine thread hops.
-newSuspendedTransaction(db) {
+suspendTransaction(db = database) {                       // Exposed 1.x, klokka-exposed
     orders.insert(order)
     klokka.enqueue(SendReceipt, ReceiptFor(order.id), tx = this,
         options { uniqueKey = "receipt-${order.id}" })   // dedup, store-enforced
 }
+// Any other JDBC library: klokka.enqueue(SendReceipt, receipt, tx = connection)
 
 // Continuations and atomic batches
 val export = klokka.enqueue(ExportData, request)
@@ -238,6 +239,7 @@ interface PushCapableStore : JobStore { fun wakeups(): Flow<Unit> }
 interface TransactionalStore<TX> : JobStore {
     suspend fun enqueue(tx: TX, jobs: List<NewJob>): List<JobId>
 }
+interface JdbcTransactionalStore : TransactionalStore<java.sql.Connection>   // jvm
 ```
 
 Execution wraps in an interceptor pipeline with stable, documented ordering: metrics, tracing, MDC, user interceptors, then the handler, inside the per-kind `timeout` when one is configured (never inside the lease; see section 5, claiming and liveness).
@@ -344,6 +346,10 @@ This list is deliberate. In neighboring ecosystems, several of these exact featu
 | Logging seam and per-job MDC | The runtime logs its own messages (supervisor restarts, failed and dead-lettered attempts) through an internal `expect fun klokkaLogger(name)` whose JVM actual wraps slf4j; no public logging facade is added. The MDC-tagged logger from #12 is delivered as context, not as a type: on the JVM the worker runs each handler inside a coroutine-aware MDC scope carrying `klokka.jobId`, `klokka.kind`, `klokka.queue`, `klokka.attempt` and `klokka.scheduleId`, so a handler's own slf4j logger and every library beneath it carry the job identity, and `JobContext` gains nothing. Platforms without MDC run the handler unchanged. Closes #28 and the second half of #31 | 2026-10-02 |
 | Wake-up NOTIFY lives in the schema | Push wake-ups come from AFTER INSERT/UPDATE triggers calling `pg_notify`, not from application code, so every write path that makes a job claimable notifies: Klokka's enqueue, the future transactional enqueue on the application's own connection, dashboard or psql requeues. Commit-time delivery makes "notify iff the job exists" automatic. The listener is one dedicated session-mode connection; a dead listener degrades to poll latency, never to lost jobs | 2026-09-13 |
 | In-memory store acknowledgment | `InMemoryJobStore(ephemeral = true)` is the explicit statement that losing every job on restart is intended (cache warming, non-critical notifications). The flag lives on the store in `klokka-core` as a plain `val` and changes nothing about store behavior; `klokka-ktor` reads it to log one INFO line instead of the WARN it emits for an unacknowledged in-memory store outside development mode. Development mode stays silent either way. The multi-replica caveat (every instance fires its own recurring schedules, as with Spring `@Scheduled`) is documented, not detected; #29 | 2026-10-13 |
+| Transactional enqueue API | Typed overloads, never one `tx: Any` method: `enqueue`/`schedule(..., tx: Connection)` in klokka-core's JVM code, `tx: JdbcTransaction` in klokka-exposed, so a wrong transaction type is a compile error rather than a runtime one. The capability is `JdbcTransactionalStore : TransactionalStore<Connection>` (non-generic, so the runtime can check it despite erasure); klokka-postgres implements it and klokka-exposed depends on core only, so any future JDBC store works with the bridge. A store that cannot join a transaction (in-memory) throws instead of silently enqueueing outside it, and a connection with auto-commit on is rejected as not being in a transaction. Single-job only: atomic batches stay with #20; #18 | 2026-10-17 |
+| Enqueued means the job exists | `JobEvent.Enqueued` is emitted only for a job that durably exists because of the call. The Exposed bridge emits it from the outermost transaction's afterCommit and drops it on any rollback, including a savepoint's; the plain `Connection` path has no commit hook and emits none, documented on the overload. Rejected: emitting at insert time with a `pendingCommit` flag, which pushes rollback filtering onto every consumer and makes metrics overcount by default. Same rule frames #36; #18 | 2026-10-17 |
+| Transactional store contract | The store writes through the caller's transaction and never alters it: no commit, rollback, auto-commit or isolation change, no session `SET` (Postgres qualifies table names with the configured schema instead of `SET search_path`), migrations on the store's own connections. The recorded enqueue time is statement time (`clock_timestamp()`), not transaction start. A uniqueKey conflicting with another open transaction's row waits for it, then dedups or inserts. Read committed is the guaranteed isolation; at stricter levels a uniqueKey race surfaces the database's serialization failure to the caller's retry. The caller's transaction must reach the store's database, documented rather than detected; #18 | 2026-10-17 |
+| Bridge API opt-in | API that integration modules need but applications should not call (`enqueueWithin`, `PendingEnqueue`) is public behind `@KlokkaBridgeApi`, a `RequiresOptIn` at error level, and may change between minor versions | 2026-10-17 |
 
 ## 13. Alternatives considered
 

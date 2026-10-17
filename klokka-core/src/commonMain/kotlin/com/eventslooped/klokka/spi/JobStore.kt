@@ -259,10 +259,35 @@ public interface PushCapableStore : JobStore {
 
 /**
  * Optional capability: enqueue participating in a caller-supplied transaction of type [TX].
- * The job is visible to workers if and only if the transaction commits. The transaction is
- * passed explicitly because thread-local transaction state does not survive coroutine
- * thread hops.
+ * The transaction is passed explicitly because thread-local transaction state does not
+ * survive coroutine thread hops.
+ *
+ * Contract, binding on every implementation:
+ * - A job written through [enqueue] exists if and only if [TX] commits. Until then it is
+ *   invisible to every other session: [claim] never returns it, queries on other
+ *   connections never list it, and no wake-up is delivered for it. On rollback nothing
+ *   remains and nothing is delivered.
+ * - The store writes through the caller's transaction and touches nothing else about it:
+ *   it never commits, rolls back, changes isolation or auto-commit, or alters session state
+ *   (search path, settings) that would outlive its own statements. Any schema
+ *   qualification the store needs goes into its statements, not into the session.
+ * - Every rule of [JobStore.enqueue] applies unchanged, including the uniqueKey rule.
+ *   A uniqueKey that conflicts with a row another transaction has written but not yet
+ *   committed waits for that transaction to end, then dedups against the row (it
+ *   committed) or inserts (it rolled back), as the database's own unique constraint does.
+ * - The enqueue time recorded for the job is the time of the write, not the start of the
+ *   caller's transaction, so a long transaction does not backdate the job.
+ * - The guarantees above hold at the database's default read-committed isolation. At
+ *   stricter levels the store may surface the database's serialization failure from a
+ *   uniqueKey race; that aborts the caller's transaction and is the caller's to retry,
+ *   like any other statement at that level.
+ * - The caller's transaction must belong to the database the store reads and claims from.
+ *   Stores are not required to detect a mismatch.
  */
 public interface TransactionalStore<TX> : JobStore {
+    /**
+     * Writes [jobs] through [tx] and returns their ids in the same order, under the rules
+     * in the interface KDoc. The jobs are not visible to anyone else until [tx] commits.
+     */
     public suspend fun enqueue(tx: TX, jobs: List<NewJob>): List<JobId>
 }

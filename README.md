@@ -116,6 +116,22 @@ install(Klokka) {
 
 Dependencies arrive as parameters, so the pattern works the same with Koin, Ktor's built-in DI, or none.
 
+## Transactional enqueue
+
+> Unreleased: on `main`, ships in 0.2.0.
+
+Write the job in the same database transaction as your own rows: it exists if and only if the transaction commits, and no worker sees it before then. With Exposed (`klokka-exposed`), pass the transaction receiver:
+
+```kotlin
+suspendTransaction(db = database) {
+    val orderId = Orders.insertAndGetId { it[Orders.customer] = customer }.value
+    klokka.enqueue(SendReceipt, ReceiptFor(orderId, customer), tx = this)
+    // throwing here rolls back the order AND the job
+}
+```
+
+Any other JDBC library works through the `Connection` its transaction runs on, with `klokka.enqueue(type, payload, tx = connection)` from `com.eventslooped.klokka.jdbc`. `schedule(type, payload, at, tx = ...)` is the delayed form. The store must be `PostgresJobStore` on the same database; the in-memory store refuses, because it cannot keep the promise. `JobEvent.Enqueued` is emitted after the commit on the Exposed path, never for a rolled-back job; the plain `Connection` path cannot observe the commit and emits none. Runnable versions of both live in `klokka-ktor/src/test/kotlin/com/eventslooped/klokka/ktor/samples/transactional/`.
+
 ## Watching it run
 
 Lifecycle events are a `SharedFlow<JobEvent>`: `Enqueued`, `Started`, `Succeeded`, `FailedAttempt`, `DeadLettered`, `Cancelled`, `ScheduleMisfired`. Dead letters are an escalation to a human, so wire them to whatever alerting you already have.
@@ -146,7 +162,8 @@ klokka.events
 | `klokka-ktor` | `install(Klokka)`, `Application.klokka`, lifecycle wiring | working |
 | `klokka-postgres` | SKIP LOCKED claiming, fenced CAS writes, LISTEN/NOTIFY wake-ups with poll as safety net, bundled migrations, multi-node kill -9 suite | working |
 | `klokka-dashboard` | Server-rendered views: jobs by state, job detail with last error, requeue; fails closed without authentication | working (minimal); SSE, per-job logs and schedules view in M2 |
-| `klokka-exposed`, `klokka-micrometer`, `klokka-opentelemetry`, `klokka-tck`, `klokka-ksp` | Bridges and tooling | later |
+| `klokka-exposed` | Transactional enqueue inside an Exposed `JdbcTransaction`, `Enqueued` event after commit | on `main`, ships in 0.2.0 |
+| `klokka-micrometer`, `klokka-opentelemetry`, `klokka-tck`, `klokka-ksp` | Bridges and tooling | later |
 
 All artifacts share the version number and are published together; see [Install](#install).
 
