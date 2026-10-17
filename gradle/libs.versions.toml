@@ -11,6 +11,7 @@ dokka = "2.2.0"
 binary-compatibility-validator = "0.18.1"
 postgresql = "42.7.8"
 testcontainers = "1.21.3"
+exposed = "1.6.0"
 maven-publish = "0.37.0"
 
 [libraries]
@@ -29,6 +30,8 @@ ktor-server-html-builder = { module = "io.ktor:ktor-server-html-builder", versio
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
+exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
